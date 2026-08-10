@@ -7,8 +7,10 @@ mod common;
 use codec::Encode;
 use common::new_test_ext;
 use frame_support::{assert_noop, assert_ok, traits::tokens::fungible::Mutate};
-use numen_runtime::{AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin, UNIT};
-use pallet_identity::legacy::IdentityInfo;
+use numen_runtime::{
+	identity_info::IdentityInfo, AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin,
+	UNIT,
+};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::{traits::StaticLookup, DispatchError};
 
@@ -30,15 +32,8 @@ fn src(who: &AccountId) -> <<Runtime as frame_system::Config>::Lookup as StaticL
 /// baseline, exercising the per-byte deposit.
 fn identity_info() -> IdInfo {
 	IdentityInfo {
-		additional: Default::default(),
 		display: pallet_identity::Data::Raw(b"numen-dev".to_vec().try_into().unwrap()),
-		legal: Default::default(),
-		web: Default::default(),
-		riot: Default::default(),
-		email: Default::default(),
-		pgp_fingerprint: None,
-		image: Default::default(),
-		twitter: Default::default(),
+		..Default::default()
 	}
 }
 

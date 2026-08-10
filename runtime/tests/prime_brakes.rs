@@ -49,8 +49,8 @@ fn ongoing_referendum(submitter: &AccountId) -> u32 {
 				.try_into()
 				.expect("one judgement fits the bound"),
 			deposit: 0,
-			info: pallet_identity::legacy::IdentityInfo {
-				twitter: pallet_identity::Data::Raw(
+			info: numen_runtime::identity_info::IdentityInfo {
+				x: pallet_identity::Data::Raw(
 					b"@submitter".to_vec().try_into().expect("handle fits the raw bound"),
 				),
 				..Default::default()
