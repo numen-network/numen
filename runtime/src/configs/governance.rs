@@ -77,7 +77,7 @@ pub mod pallet_custom_origins {
 
 	decl_ensure! {
 		pub type SmallSpender: EnsureOrigin<Success = Balance> {
-			SmallSpender = 100_000 * UNIT,
+			SmallSpender = 200_000 * UNIT,
 		}
 	}
 
@@ -89,7 +89,7 @@ pub mod pallet_custom_origins {
 
 	decl_ensure! {
 		pub type BigSpender: EnsureOrigin<Success = Balance> {
-			BigSpender = 5_000_000 * UNIT,
+			BigSpender = 10_000_000 * UNIT,
 		}
 	}
 }
@@ -98,11 +98,13 @@ const fn percent(x: i32) -> FixedI64 {
 	FixedI64::from_rational(x as u128, 100)
 }
 
-const APP_SMALL: Curve = Curve::make_linear(7, 7, percent(50), percent(100));
+// Approval drops quickly toward its floor and holds there, so the hard bar only
+// bites while a proposal is fresh. Support still falls linearly.
+const APP_SMALL: Curve = Curve::make_reciprocal(1, 7, percent(80), percent(50), percent(100));
 const SUP_SMALL: Curve = Curve::make_linear(7, 7, percent(0), percent(50));
-const APP_MEDIUM: Curve = Curve::make_linear(14, 14, percent(60), percent(100));
+const APP_MEDIUM: Curve = Curve::make_reciprocal(2, 14, percent(85), percent(60), percent(100));
 const SUP_MEDIUM: Curve = Curve::make_linear(14, 14, percent(2), percent(50));
-const APP_BIG: Curve = Curve::make_linear(28, 28, percent(70), percent(100));
+const APP_BIG: Curve = Curve::make_reciprocal(4, 28, percent(90), percent(70), percent(100));
 const SUP_BIG: Curve = Curve::make_linear(28, 28, percent(5), percent(50));
 
 const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
@@ -110,7 +112,7 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 		id: 0,
 		info: TrackInfo {
 			name: s("small_spender"),
-			max_deciding: 20,
+			max_deciding: 100,
 			decision_deposit: 100 * UNIT,
 			prepare_period: HOURS,
 			decision_period: 7 * DAYS,
@@ -124,8 +126,8 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 		id: 1,
 		info: TrackInfo {
 			name: s("medium_spender"),
-			max_deciding: 10,
-			decision_deposit: 5_000 * UNIT,
+			max_deciding: 20,
+			decision_deposit: 1_000 * UNIT,
 			prepare_period: HOURS,
 			decision_period: 14 * DAYS,
 			confirm_period: 3 * DAYS,
@@ -138,8 +140,8 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 		id: 2,
 		info: TrackInfo {
 			name: s("big_spender"),
-			max_deciding: 4,
-			decision_deposit: 100_000 * UNIT,
+			max_deciding: 2,
+			decision_deposit: 10_000 * UNIT,
 			prepare_period: HOURS,
 			decision_period: 28 * DAYS,
 			confirm_period: 7 * DAYS,

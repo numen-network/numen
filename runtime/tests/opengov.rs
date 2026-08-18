@@ -22,7 +22,7 @@ use sp_keyring::Sr25519Keyring;
 use sp_runtime::DispatchError;
 
 /// Small tier funding cap. A referendum on the small track releases at most this.
-const SMALL_CAP: Balance = 100_000 * UNIT;
+const SMALL_CAP: Balance = 200_000 * UNIT;
 
 /// Bankroll for the account that submits and votes. Small track support is
 /// weighed against active issuance, so its aye capital must dominate the supply.
