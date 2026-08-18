@@ -9,8 +9,11 @@ use frame_support::{
 	assert_ok,
 	traits::{tokens::fungible::Mutate, Contains},
 };
-use numen_runtime::{AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin, UNIT};
-use pallet_identity::{legacy::IdentityInfo, Data, Judgement};
+use numen_runtime::{
+	identity_info::IdentityInfo, AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin,
+	UNIT,
+};
+use pallet_identity::{Data, Judgement};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::traits::{Hash, StaticLookup};
 
@@ -27,18 +30,8 @@ fn raw(bytes: &[u8]) -> Data {
 	Data::Raw(bytes.to_vec().try_into().expect("raw data fits the field bound"))
 }
 
-fn identity_info(twitter: Data) -> IdInfo {
-	IdentityInfo {
-		additional: Default::default(),
-		display: raw(b"candidate"),
-		legal: Default::default(),
-		web: Default::default(),
-		riot: Default::default(),
-		email: Default::default(),
-		pgp_fingerprint: None,
-		image: Default::default(),
-		twitter,
-	}
+fn identity_info(x: Data) -> IdInfo {
+	IdentityInfo { display: raw(b"candidate"), x, ..Default::default() }
 }
 
 /// Registers `info` for `who` and judges it Reasonable through a registrar

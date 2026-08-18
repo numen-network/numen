@@ -45,6 +45,7 @@ scale-info = { version = "2.11.6", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0.149", default-features = false }
 codec = { version = "3.7.4", default-features = false, package = "parity-scale-codec" }
+enumflags2 = { version = "0.7.11", default-features = false }
 libm = { version = "=0.2.16" }
 rand_pcg = { version = "=0.10.2", default-features = false }
 rand_core = { version = "=0.10.1", default-features = false }

@@ -770,7 +770,7 @@ impl pallet_identity::Config for Runtime {
 	type UsernameDeposit = UsernameDeposit;
 	type SubAccountDeposit = SubAccountDeposit;
 	type MaxSubAccounts = ConstU32<100>;
-	type IdentityInformation = pallet_identity::legacy::IdentityInfo<ConstU32<4>>;
+	type IdentityInformation = crate::identity_info::IdentityInfo;
 	type MaxRegistrars = ConstU32<20>;
 	type Slashed = Treasury;
 	// Unreachable with no Root track and no sudo. Killing an identity only clears

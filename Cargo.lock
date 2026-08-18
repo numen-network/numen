@@ -6835,6 +6835,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "cumulus-primitives-proof-size-hostfunction",
+ "enumflags2",
  "ethereum",
  "fp-evm",
  "fp-rpc",

@@ -8,6 +8,7 @@ pub mod apis;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
 pub mod configs;
+pub mod identity_info;
 pub mod inherent_checks;
 pub mod weights;
 

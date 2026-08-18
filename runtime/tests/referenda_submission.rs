@@ -12,10 +12,10 @@ use frame_support::{
 	traits::{schedule::DispatchTime, tokens::fungible::Mutate, Bounded},
 };
 use numen_runtime::{
-	configs::governance::pallet_custom_origins, AccountId, Balance, Balances, Identity, Referenda,
-	Runtime, RuntimeCall, RuntimeOrigin, UNIT,
+	configs::governance::pallet_custom_origins, identity_info::IdentityInfo, AccountId, Balance,
+	Balances, Identity, Referenda, Runtime, RuntimeCall, RuntimeOrigin, UNIT,
 };
-use pallet_identity::{legacy::IdentityInfo, Data, Judgement};
+use pallet_identity::{Data, Judgement};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::{
 	traits::{Hash, StaticLookup},
@@ -40,18 +40,8 @@ fn raw(bytes: &[u8]) -> Data {
 	Data::Raw(bytes.to_vec().try_into().expect("raw data fits the field bound"))
 }
 
-fn identity_info(twitter: Data, additional: Vec<(Data, Data)>) -> IdInfo {
-	IdentityInfo {
-		additional: additional.try_into().expect("additional entries fit the field limit"),
-		display: raw(b"proposer"),
-		legal: Default::default(),
-		web: Default::default(),
-		riot: Default::default(),
-		email: Default::default(),
-		pgp_fingerprint: None,
-		image: Default::default(),
-		twitter,
-	}
+fn identity_info(x: Data) -> IdInfo {
+	IdentityInfo { display: raw(b"proposer"), x, ..Default::default() }
 }
 
 /// Installs Eve as registrar zero through the prime key.
@@ -112,7 +102,7 @@ fn unjudged_identity_cannot_submit() {
 		let who = funded(Sr25519Keyring::Alice);
 		assert_ok!(Identity::set_identity(
 			RuntimeOrigin::signed(who.clone()),
-			Box::new(identity_info(raw(b"@proposer"), vec![])),
+			Box::new(identity_info(raw(b"@proposer"))),
 		));
 
 		assert_noop!(submit(&who), DispatchError::BadOrigin);
@@ -124,7 +114,7 @@ fn unjudged_identity_cannot_submit() {
 fn negative_judgement_cannot_submit() {
 	new_test_ext().execute_with(|| {
 		let who = funded(Sr25519Keyring::Alice);
-		judged_identity(&who, Judgement::OutOfDate, identity_info(raw(b"@proposer"), vec![]));
+		judged_identity(&who, Judgement::OutOfDate, identity_info(raw(b"@proposer")));
 
 		assert_noop!(submit(&who), DispatchError::BadOrigin);
 		assert_eq!(referendum_count(), 0);
@@ -132,11 +122,17 @@ fn negative_judgement_cannot_submit() {
 }
 
 #[test]
-fn judged_identity_without_social_channel_cannot_submit() {
+fn judged_identity_without_qualifying_channel_cannot_submit() {
 	new_test_ext().execute_with(|| {
 		let who = funded(Sr25519Keyring::Alice);
-		let mut info = identity_info(Data::None, vec![(raw(b"matrix"), raw(b"@proposer"))]);
-		info.email = raw(b"proposer@example.com");
+		let info = IdentityInfo {
+			display: raw(b"proposer"),
+			web: raw(b"proposer.example"),
+			email: raw(b"proposer@example.com"),
+			matrix: raw(b"@proposer:example.com"),
+			github: raw(b"proposer"),
+			..Default::default()
+		};
 		judged_identity(&who, Judgement::Reasonable, info);
 
 		assert_noop!(submit(&who), DispatchError::BadOrigin);
@@ -147,10 +143,11 @@ fn judged_identity_without_social_channel_cannot_submit() {
 #[test]
 fn non_plaintext_social_channel_cannot_submit() {
 	let commitment = <Runtime as frame_system::Config>::Hashing::hash(b"@proposer").0;
-	let hashed_twitter = identity_info(Data::BlakeTwo256(commitment), vec![]);
-	let empty_telegram = identity_info(Data::None, vec![(raw(b"telegram"), raw(b""))]);
+	let hashed_x = identity_info(Data::BlakeTwo256(commitment));
+	let empty_telegram =
+		IdentityInfo { display: raw(b"proposer"), telegram: raw(b""), ..Default::default() };
 
-	for info in [hashed_twitter, empty_telegram] {
+	for info in [hashed_x, empty_telegram] {
 		new_test_ext().execute_with(|| {
 			let who = funded(Sr25519Keyring::Alice);
 			judged_identity(&who, Judgement::Reasonable, info.clone());
@@ -165,7 +162,7 @@ fn non_plaintext_social_channel_cannot_submit() {
 fn reasonable_judgement_submits() {
 	new_test_ext().execute_with(|| {
 		let who = funded(Sr25519Keyring::Alice);
-		judged_identity(&who, Judgement::Reasonable, identity_info(raw(b"@proposer"), vec![]));
+		judged_identity(&who, Judgement::Reasonable, identity_info(raw(b"@proposer")));
 
 		assert_ok!(submit(&who));
 		assert_eq!(referendum_count(), 1);
@@ -176,7 +173,7 @@ fn reasonable_judgement_submits() {
 fn known_good_judgement_submits() {
 	new_test_ext().execute_with(|| {
 		let who = funded(Sr25519Keyring::Alice);
-		judged_identity(&who, Judgement::KnownGood, identity_info(raw(b"@proposer"), vec![]));
+		judged_identity(&who, Judgement::KnownGood, identity_info(raw(b"@proposer")));
 
 		assert_ok!(submit(&who));
 		assert_eq!(referendum_count(), 1);
@@ -184,15 +181,17 @@ fn known_good_judgement_submits() {
 }
 
 #[test]
-fn telegram_and_discord_additional_channels_qualify() {
-	for key in [b"telegram".as_slice(), b"discord".as_slice()] {
+fn telegram_and_discord_channels_qualify() {
+	let handle = raw(b"@proposer");
+	let telegram =
+		IdentityInfo { display: raw(b"proposer"), telegram: handle.clone(), ..Default::default() };
+	let discord =
+		IdentityInfo { display: raw(b"proposer"), discord: handle, ..Default::default() };
+
+	for info in [telegram, discord] {
 		new_test_ext().execute_with(|| {
 			let who = funded(Sr25519Keyring::Alice);
-			judged_identity(
-				&who,
-				Judgement::Reasonable,
-				identity_info(Data::None, vec![(raw(key), raw(b"@proposer"))]),
-			);
+			judged_identity(&who, Judgement::Reasonable, info.clone());
 
 			assert_ok!(submit(&who));
 			assert_eq!(referendum_count(), 1);
@@ -204,7 +203,7 @@ fn telegram_and_discord_additional_channels_qualify() {
 fn sub_of_qualified_identity_submits() {
 	new_test_ext().execute_with(|| {
 		let parent = funded(Sr25519Keyring::Alice);
-		judged_identity(&parent, Judgement::Reasonable, identity_info(raw(b"@proposer"), vec![]));
+		judged_identity(&parent, Judgement::Reasonable, identity_info(raw(b"@proposer")));
 		let sub = funded(Sr25519Keyring::Bob);
 		assert_ok!(Identity::set_subs(
 			RuntimeOrigin::signed(parent),
@@ -222,7 +221,7 @@ fn sub_of_unqualified_identity_cannot_submit() {
 		let parent = funded(Sr25519Keyring::Alice);
 		assert_ok!(Identity::set_identity(
 			RuntimeOrigin::signed(parent.clone()),
-			Box::new(identity_info(raw(b"@proposer"), vec![])),
+			Box::new(identity_info(raw(b"@proposer"))),
 		));
 		let sub = funded(Sr25519Keyring::Bob);
 		assert_ok!(Identity::set_subs(

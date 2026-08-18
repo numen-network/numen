@@ -207,10 +207,6 @@ pub type TreasurySpender = EitherOf<SmallSpender, EitherOf<MediumSpender, BigSpe
 /// the owner traceable.
 pub struct QualifiedIdentity;
 
-/// Additional field keys that count as social channels next to the native
-/// twitter field.
-const SOCIAL_CHANNEL_KEYS: [&[u8]; 2] = [b"telegram", b"discord"];
-
 fn plaintext(data: &Data) -> bool {
 	matches!(data, Data::Raw(bytes) if !bytes.is_empty())
 }
@@ -222,11 +218,9 @@ impl QualifiedIdentity {
 				.judgements
 				.iter()
 				.any(|(_, judgement)| matches!(judgement, Judgement::Reasonable | Judgement::KnownGood));
-			let channel = plaintext(&registration.info.twitter)
-				|| registration.info.additional.iter().any(|(key, value)| {
-					matches!(key, Data::Raw(k) if SOCIAL_CHANNEL_KEYS.contains(&k.as_slice()))
-						&& plaintext(value)
-				});
+			let info = registration.info;
+			let channel =
+				plaintext(&info.x) || plaintext(&info.telegram) || plaintext(&info.discord);
 			judged && channel
 		})
 	}
@@ -269,8 +263,8 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureQualifiedIdentity {
 /// that clears it.
 #[cfg(feature = "runtime-benchmarks")]
 pub fn qualify_identity(who: &AccountId) {
-	let info = pallet_identity::legacy::IdentityInfo {
-		twitter: Data::Raw(b"@bench".to_vec().try_into().expect("handle fits the field bound")),
+	let info = crate::identity_info::IdentityInfo {
+		x: Data::Raw(b"@bench".to_vec().try_into().expect("handle fits the field bound")),
 		..Default::default()
 	};
 	let registration = pallet_identity::Registration {
