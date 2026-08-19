@@ -13,8 +13,8 @@ use sp_core::{crypto::UncheckedInto, H160, U256};
 use sp_genesis_builder::{self, PresetId};
 use sp_keyring::{Ed25519Keyring, Sr25519Keyring};
 
-const GENESIS_TREASURY_ISSUANCE: u128 = 400_000_000 * UNIT;
-const GENESIS_AIRDROP_ISSUANCE: u128 = 200_000_000 * UNIT;
+const GENESIS_TREASURY_ISSUANCE: u128 = 550_000_000 * UNIT;
+const GENESIS_AIRDROP_ISSUANCE: u128 = 50_000_000 * UNIT;
 
 const INITIAL_DIFFICULTY: u32 = 1_000;
 
