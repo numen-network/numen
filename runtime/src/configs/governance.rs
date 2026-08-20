@@ -23,6 +23,10 @@ pub mod pallet_custom_origins {
 	use crate::{Balance, UNIT};
 	use frame_support::pallet_prelude::*;
 
+	pub const SMALL_SPENDER_CAP: Balance = 200_000 * UNIT;
+	pub const MEDIUM_SPENDER_CAP: Balance = 1_000_000 * UNIT;
+	pub const BIG_SPENDER_CAP: Balance = 10_000_000 * UNIT;
+
 	#[pallet::config]
 	pub trait Config: frame_system::Config {}
 
@@ -77,19 +81,34 @@ pub mod pallet_custom_origins {
 
 	decl_ensure! {
 		pub type SmallSpender: EnsureOrigin<Success = Balance> {
-			SmallSpender = 200_000 * UNIT,
+			SmallSpender = SMALL_SPENDER_CAP,
 		}
 	}
 
 	decl_ensure! {
 		pub type MediumSpender: EnsureOrigin<Success = Balance> {
-			MediumSpender = 1_000_000 * UNIT,
+			MediumSpender = MEDIUM_SPENDER_CAP,
 		}
 	}
 
 	decl_ensure! {
 		pub type BigSpender: EnsureOrigin<Success = Balance> {
-			BigSpender = 10_000_000 * UNIT,
+			BigSpender = BIG_SPENDER_CAP,
+		}
+	}
+
+	/// Published so a caller can size a proposal against the track it will run
+	/// on. The ceilings live in an `EnsureOrigin` success value. Nothing else
+	/// in the static metadata reaches them.
+	#[pallet::extra_constants]
+	impl<T: Config> Pallet<T> {
+		#[pallet::constant_name(SpendCaps)]
+		fn spend_caps() -> alloc::vec::Vec<(u16, Origin, Balance)> {
+			alloc::vec![
+				(0, Origin::SmallSpender, SMALL_SPENDER_CAP),
+				(1, Origin::MediumSpender, MEDIUM_SPENDER_CAP),
+				(2, Origin::BigSpender, BIG_SPENDER_CAP),
+			]
 		}
 	}
 }

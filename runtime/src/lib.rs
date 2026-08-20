@@ -297,6 +297,9 @@ mod runtime {
 	
 	#[runtime::pallet_index(29)]
 	pub type Identity = pallet_identity;
+
+	#[runtime::pallet_index(30)]
+	pub type Poscan = configs::poscan::pallet_poscan;
 }
 
 // pallet-im-online submits unsigned heartbeat extrinsics from offchain
