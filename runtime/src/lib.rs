@@ -207,99 +207,103 @@ mod runtime {
 	pub type Timestamp = pallet_timestamp;
 
 	#[runtime::pallet_index(2)]
-	pub type Balances = pallet_balances;
+	pub type Utility = pallet_utility;
 
 	#[runtime::pallet_index(3)]
-	pub type TransactionPayment = pallet_transaction_payment;
+	pub type Balances = pallet_balances;
 
 	#[runtime::pallet_index(4)]
-	pub type BlockReward = pallet_reward;
+	pub type TransactionPayment = pallet_transaction_payment;
 
 	#[runtime::pallet_index(5)]
-	pub type Difficulty = pallet_difficulty;
+	pub type Multisig = pallet_multisig;
 
 	#[runtime::pallet_index(6)]
-	pub type Grandpa = pallet_grandpa;
+	pub type Proxy = pallet_proxy;
 
 	#[runtime::pallet_index(7)]
-	pub type Validator = pallet_validator;
-
+	pub type Vesting = pallet_vesting;
+	
 	#[runtime::pallet_index(8)]
-	pub type ImOnline = pallet_im_online;
+	pub type Identity = pallet_identity;
+
+	// --- POW ---
 
 	#[runtime::pallet_index(9)]
-	pub type Session = pallet_session;
+	pub type Poscan = configs::poscan::pallet_poscan;
 
 	#[runtime::pallet_index(10)]
-	pub type Authorship = pallet_authorship;
+	pub type BlockReward = pallet_reward;
 
 	#[runtime::pallet_index(11)]
-	pub type Historical = pallet_session::historical;
+	pub type Difficulty = pallet_difficulty;
 
-	// --- Frontier EVM stack ---
+	// --- BFT ---
 
 	#[runtime::pallet_index(12)]
-	pub type Ethereum = pallet_ethereum;
+	pub type Grandpa = pallet_grandpa;
 
 	#[runtime::pallet_index(13)]
-	pub type EVM = pallet_evm;
+	pub type Validator = pallet_validator;
 
 	#[runtime::pallet_index(14)]
-	pub type EVMChainId = pallet_evm_chain_id;
+	pub type ImOnline = pallet_im_online;
 
 	#[runtime::pallet_index(15)]
-	pub type BaseFee = pallet_base_fee;
-
-	// --- Treasury and bounties ---
+	pub type Session = pallet_session;
 
 	#[runtime::pallet_index(16)]
-	pub type Treasury = pallet_treasury;
+	pub type Authorship = pallet_authorship;
 
 	#[runtime::pallet_index(17)]
-	pub type Bounties = pallet_bounties;
-
-	#[runtime::pallet_index(18)]
-	pub type ChildBounties = pallet_child_bounties;
+	pub type Historical = pallet_session::historical;
 
 	// --- OpenGov ---
 
-	#[runtime::pallet_index(19)]
+	#[runtime::pallet_index(18)]
 	pub type Preimage = pallet_preimage;
 
-	#[runtime::pallet_index(20)]
+	#[runtime::pallet_index(19)]
 	pub type Scheduler = pallet_scheduler;
 
-	#[runtime::pallet_index(21)]
+	#[runtime::pallet_index(20)]
 	pub type ConvictionVoting = pallet_conviction_voting;
 
-	#[runtime::pallet_index(22)]
+	#[runtime::pallet_index(21)]
 	pub type Referenda = pallet_referenda;
 
-	#[runtime::pallet_index(23)]
+	#[runtime::pallet_index(22)]
 	pub type Origins = configs::governance::pallet_custom_origins;
 
+	// --- Treasury and bounties ---
+
+	#[runtime::pallet_index(23)]
+	pub type Treasury = pallet_treasury;
+
 	#[runtime::pallet_index(24)]
-	pub type Multisig = pallet_multisig;
+	pub type Bounties = pallet_bounties;
 
 	#[runtime::pallet_index(25)]
-	pub type Utility = pallet_utility;
+	pub type ChildBounties = pallet_child_bounties;
+
+	// --- Frontier EVM stack ---
 
 	#[runtime::pallet_index(26)]
-	pub type Proxy = pallet_proxy;
+	pub type Ethereum = pallet_ethereum;
 
 	#[runtime::pallet_index(27)]
-	pub type Prime = pallet_prime;
+	pub type EVM = pallet_evm;
+
+	#[runtime::pallet_index(28)]
+	pub type EVMChainId = pallet_evm_chain_id;
+
+	#[runtime::pallet_index(29)]
+	pub type BaseFee = pallet_base_fee;
 
 	// ---
 
-	#[runtime::pallet_index(28)]
-	pub type Vesting = pallet_vesting;
-	
-	#[runtime::pallet_index(29)]
-	pub type Identity = pallet_identity;
-
-	#[runtime::pallet_index(30)]
-	pub type Poscan = configs::poscan::pallet_poscan;
+	#[runtime::pallet_index(255)]
+	pub type Prime = pallet_prime;
 }
 
 // pallet-im-online submits unsigned heartbeat extrinsics from offchain
