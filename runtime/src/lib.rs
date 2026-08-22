@@ -300,6 +300,9 @@ mod runtime {
 	#[runtime::pallet_index(29)]
 	pub type BaseFee = pallet_base_fee;
 
+	#[runtime::pallet_index(30)]
+	pub type Precompiles = configs::evm::pallet_precompiles;
+
 	// ---
 
 	#[runtime::pallet_index(255)]
