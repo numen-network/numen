@@ -55,6 +55,8 @@ const MAX_POV_SIZE: u64 = 5 * 1024 * 1024;
 /// Soft cap on storage growth per block, used to derive
 /// `GasLimitStorageGrowthRatio`.
 const MAX_STORAGE_GROWTH: u64 = 400 * 1024;
+/// EVM slot the native balance ERC20 facade is mounted at.
+const BALANCES_ERC20: u64 = 0x802;
 
 parameter_types! {
 	pub BlockGasLimit: U256 = U256::from(BLOCK_GAS_LIMIT);
@@ -111,7 +113,7 @@ pub type EthereumPrecompileChecks = (AcceptDelegateCall, CallableByContract, Cal
 pub type Erc20PrecompileChecks = (CallableByContract, CallableByPrecompile);
 
 /// Precompile set covering the standard Ethereum precompiles 1-8 plus the
-/// chain-specific `balances-erc20` precompile at `0x0000…0802`, which
+/// chain-specific `balances-erc20` precompile at [`BALANCES_ERC20`], which
 /// exposes the native balance pallet through an ERC20 interface and adds a
 /// `withdraw(bytes32,uint256)` helper for EVM -> Substrate transfers.
 ///
@@ -137,12 +139,39 @@ pub type FrontierPrecompiles<R> = PrecompileSetBuilder<
 		PrecompileAt<AddressU64<7>, Bn128Mul, EthereumPrecompileChecks>,
 		PrecompileAt<AddressU64<8>, Bn128Pairing, EthereumPrecompileChecks>,
 		PrecompileAt<
-			AddressU64<0x802>,
+			AddressU64<{ BALANCES_ERC20 }>,
 			Erc20BalancesPrecompile<R, NativeErc20Metadata>,
 			Erc20PrecompileChecks,
 		>,
 	),
 >;
+
+/// EVM facts the chain publishes for off chain readers.
+#[frame_support::pallet]
+pub mod pallet_precompiles {
+	use super::BALANCES_ERC20;
+	use sp_core::H160;
+
+	#[pallet::config]
+	pub trait Config: frame_system::Config {}
+
+	#[pallet::pallet]
+	pub struct Pallet<T>(_);
+
+	#[pallet::extra_constants]
+	impl<T: Config> Pallet<T> {
+		/// EVM address of the native balance ERC20 facade. A wallet builds
+		/// its withdraw call against this address and an indexer excludes
+		/// it from token listings, so it is published for both to read
+		/// rather than copied into each.
+		#[pallet::constant_name(BalancesErc20)]
+		fn balances_erc20() -> H160 {
+			H160::from_low_u64_be(BALANCES_ERC20)
+		}
+	}
+}
+
+impl pallet_precompiles::Config for Runtime {}
 
 /// EVM fee handler routing both the base fee and the priority tip to the PoW
 /// miner. Base fee goes through [`DealWithFees`]; the tip is deposited to the

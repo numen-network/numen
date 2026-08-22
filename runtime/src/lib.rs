@@ -73,7 +73,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 100,
+	spec_version: 101,
 	impl_version: 1,
 	apis: apis::RUNTIME_API_VERSIONS,
 	transaction_version: 1,
@@ -299,6 +299,9 @@ mod runtime {
 
 	#[runtime::pallet_index(29)]
 	pub type BaseFee = pallet_base_fee;
+
+	#[runtime::pallet_index(30)]
+	pub type Precompiles = configs::evm::pallet_precompiles;
 
 	// ---
 
