@@ -56,16 +56,16 @@ fn dev_validators() -> Vec<(AccountId, GrandpaId, ImOnlineId)> {
 			Sr25519Keyring::Alice.to_account_id(),
 			Ed25519Keyring::Alice.public().into(),
 			Sr25519Keyring::Alice.public().into(),
-		),
+		)
+	]
+}
+
+fn testnet_validators() -> Vec<(AccountId, GrandpaId, ImOnlineId)> {
+	vec![
 		(
-			Sr25519Keyring::Bob.to_account_id(),
-			Ed25519Keyring::Bob.public().into(),
-			Sr25519Keyring::Bob.public().into(),
-		),
-		(
-			Sr25519Keyring::Charlie.to_account_id(),
-			Ed25519Keyring::Charlie.public().into(),
-			Sr25519Keyring::Charlie.public().into(),
+			hex!("d691b51d8e033fee40766cd7ed830a953689a128aa76a084adcfe85ce169b251").into(),
+			hex!("963234b3d31612fe465adf6089b9e6cda6fa2e9489f0bc39fe5cf2cbe53525ad").unchecked_into(),
+			hex!("62ed90b1060d4acc665e1bca4d80a2c646dd2160e5252f3ca7c69485768b3a17").unchecked_into(),
 		),
 	]
 }
@@ -73,19 +73,24 @@ fn dev_validators() -> Vec<(AccountId, GrandpaId, ImOnlineId)> {
 fn live_validators() -> Vec<(AccountId, GrandpaId, ImOnlineId)> {
 	vec![
 		(
-			hex!("7ebc23de675cd320952153f65eed8636ede3ee914d38d86a03b8690c5ef87745").into(),
-			hex!("23209a84d105da8b36c9a90c00d92f518f2599d7ebe502a393ad4e22c5d4839a").unchecked_into(),
-			hex!("dc5fa9c5793d7543808c84773f3cbce7928ccf4ce94568c7d4ab7a0e53de5037").unchecked_into(),
+			hex!("0c75ace277b402399cf8fb811b871169e5d675f9f7c5c9a72a72c4bb8044d917").into(),
+			hex!("442e9503c1fc1289fa31770fd14735c6c109ee72eec64aa7af63fe200dfcca2c").unchecked_into(),
+			hex!("001ae5824a816a9f2e6b8758d906b624f66a835fd1473f93a8f4cb0057ed6558").unchecked_into(),
 		),
 		(
-			hex!("f83e5c47238ae444ef3165741b0c2a26a15bfb910655376680dc86d47032ee71").into(),
-			hex!("fdeb4cc2c3ce7049ffe91c86e4c777d5d381cf4a66a794d254175c4f68d51f47").unchecked_into(),
-			hex!("9c3c925508d53f37ad9c9db0807f2cbd283d02ef34481d90113c2ec9ec195662").unchecked_into(),
+			hex!("0c75ace1a6f6b7857e03f08e170590ed34fbded0b415d37de2dda6c2fa2bf85d").into(),
+			hex!("1e2de688a48e6601f348d2a96e5f28b760e1b0a3f5437db5600d6d8fb4f59c15").unchecked_into(),
+			hex!("9a6a8618d85624e1bc9bc28f02b7b2911d310881b5a7e59da739fcf4b0b8c02c").unchecked_into(),
 		),
 		(
-			hex!("a08b338e366fdd4d7a4e66cd6ff1c8fe3f8d8b58f72ea980938612df2a12cb2f").into(),
-			hex!("98c5493056057f89d374b64f5dc476f796cf64901d3f625e870c406d610f6fcb").unchecked_into(),
-			hex!("9ac75734257b6aaf82e526030783b3f4fa9823a22c5fcf23b5115642ad12a871").unchecked_into(),
+			hex!("0c75ace1f15ade9f7c63fbe5cf37982d9699a2667e14c789f37b5b720cba8e10").into(),
+			hex!("2fb4a53bcbc662cf9fbf572644fe8cb510259bea5e30614c2349da84bf6e8731").unchecked_into(),
+			hex!("18ad57728b13145ade005d1320dc17e66c6d79a1ce438697428766e15972fa5b").unchecked_into(),
+		),
+		(
+			hex!("0c75ace1f34508360008ad6b21df5f69412786019ce84847c8609f239e4d6123").into(),
+			hex!("b55955ce16778ab577f80af54d4e5258d57dd674fc9f64fd782fae9512e9f954").unchecked_into(),
+			hex!("b2d1964319a98bb8d621758947737db7425dca32a83aeb2055799e6b4a73ed49").unchecked_into(),
 		),
 	]
 }
@@ -111,8 +116,8 @@ fn live_balances() -> Vec<(AccountId, u128)> {
 	]
 }
 
-// nu7bkLdXi7aBVP8phwhrm3Js8PgNjseDbaj5XPuzfkQhgDzYT
-const PRIME_MULTISIG: [u8; 32] = hex!("db45d74546b00d6efd137e9a2ea63a3b1595bad6aa3407370eedf43d59fb0b5a");
+// nu7PrimeGGWHhqsFvKxLbmCsudaCDMDYaKwiDVR46k3AHUtYk
+const PRIME: [u8; 32] = hex!("d23460fba7462ff9493b18c9974274af46e6c23ac219cfb0f38930b36275576a");
 
 
 fn genesis_patch(
@@ -183,8 +188,8 @@ pub fn integration_config_genesis() -> Value {
 pub fn testnet_config_genesis() -> Value {
 	genesis_patch(
 		live_balances(),
-		Some(PRIME_MULTISIG.into()),
-		live_validators(),
+		Some(PRIME.into()),
+		testnet_validators(),
 		TEST_EVM_CHAIN_ID,
 		BTreeMap::new(),
 		INITIAL_DIFFICULTY.into()
@@ -194,7 +199,7 @@ pub fn testnet_config_genesis() -> Value {
 pub fn mainnet_config_genesis() -> Value {
 	genesis_patch(
 		live_balances(),
-		Some(PRIME_MULTISIG.into()),
+		Some(PRIME.into()),
 		live_validators(),
 		MAIN_EVM_CHAIN_ID,
 		BTreeMap::new(),
