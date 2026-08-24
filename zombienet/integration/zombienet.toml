@@ -1,6 +1,6 @@
 [settings]
-# Generous default for any "within X seconds" assertion. PoW target is 20s
-# so 600s gives us ~30 blocks of slack.
+# Generous default for any "within X seconds" assertion. PoW targets 10s per
+# block, so 1000s covers about 100 blocks at that pace.
 timeout = 1000
 provider = "native"
 

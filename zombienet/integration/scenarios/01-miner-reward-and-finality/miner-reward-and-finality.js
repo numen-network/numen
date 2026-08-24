@@ -1,6 +1,6 @@
-// "<m1,m2,...>,<bestH>,<finH>"
+// "<m1,m2,...>,<h>"
 
-const { connect, watchHeads, POW_ENGINE_ID, getUri, waitBlockAt } = require("../../js-scripts/lib");
+const { connect, POW_ENGINE_ID, getUri, waitBlockAt, waitFinalizedAt } = require("../../js-scripts/lib");
 const { Keyring } = require("@polkadot/keyring");
 const { decodeAddress, cryptoWaitReady } = require("@polkadot/util-crypto");
 const { u8aToHex } = require("@polkadot/util");
@@ -11,21 +11,16 @@ async function connectAll(networkInfo, nodeNames) {
     return apis;
 }
 
-async function assertAllFinalized(apis, finH) {
+async function waitAllFinalized(apis, height) {
     for (const [name, api] of Object.entries(apis)) {
-        const finHash = await api.rpc.chain.getFinalizedHead();
-        const finHeader = await api.rpc.chain.getHeader(finHash);
-        const finNum = finHeader.number.toNumber();
-        console.log("📜", `  ${name.padEnd(8)} finalized = #${finNum}`);
-        if (finNum < finH) {
-            throw new Error(`${name}: finalized #${finNum} < required #${finH}`);
-        }
+        await waitFinalizedAt(api, height);
+        console.log("📜", `  ${name.padEnd(8)} finalized >= #${height}`);
     }
 }
 
-async function assertFinalizedConsistency(apis, finH) {
+async function assertFinalizedConsistency(apis, height) {
     const nodeNames = Object.keys(apis);
-    for (let h = 1; h <= finH; h += 1) {
+    for (let h = 1; h <= height; h += 1) {
         let reference = null;
         let referenceFrom = null;
         for (const name of nodeNames) {
@@ -57,22 +52,22 @@ function buildWatch(names, keyring) {
     return { watch, byHex };
 }
 
-async function snapshotBalances(alice, watch, bestH) {
+async function snapshotBalances(alice, watch, height) {
     const hash0 = await alice.rpc.chain.getBlockHash(0);
-    const hashN = await alice.rpc.chain.getBlockHash(bestH);
+    const hashN = await alice.rpc.chain.getBlockHash(height);
     const apiAt0 = await alice.at(hash0);
     const apiAtN = await alice.at(hashN);
     for (const [name, v] of Object.entries(watch)) {
         v.init = (await apiAt0.query.system.account(v.address)).data.free.toBigInt();
         v.final = (await apiAtN.query.system.account(v.address)).data.free.toBigInt();
-        console.log("📜", `  ${name.padEnd(8)} init@#0=${v.init} final@#${bestH}=${v.final}`);
+        console.log("📜", `  ${name.padEnd(8)} init@#0=${v.init} final@#${height}=${v.final}`);
     }
 }
 
-async function countAuthoredBlocks(alice, watch, byHex, bestH) {
+async function countAuthoredBlocks(alice, watch, byHex, height) {
     let watched = 0;
     let unwatched = 0;
-    for (let h = 1; h <= bestH; h += 1) {
+    for (let h = 1; h <= height; h += 1) {
         const hash = await alice.rpc.chain.getBlockHash(h);
         const header = await alice.rpc.chain.getHeader(hash);
         let authorHex = null;
@@ -96,7 +91,7 @@ async function countAuthoredBlocks(alice, watch, byHex, bestH) {
         }
     }
 
-    console.log("📜", `  authored #1..#${bestH}: watched=${watched}, unwatched=${unwatched}`);
+    console.log("📜", `  authored #1..#${height}: watched=${watched}, unwatched=${unwatched}`);
 }
 
 function assertRewards(watch, reward) {
@@ -110,15 +105,14 @@ function assertRewards(watch, reward) {
 }
 
 async function run(_zombie, networkInfo, args) {
-    if (!args || args.length < 3) {
-        console.error("📜", `  usage: with "<m1>,<m2>,...,<bestH>,<finH>"; got args=${JSON.stringify(args)}`);
+    if (!args || args.length < 2) {
+        console.error("📜", `  usage: with "<m1>,<m2>,...,<h>"; got args=${JSON.stringify(args)}`);
         return 0;
     }
-    const bestH = Number(args[args.length - 2]);
-    const finH = Number(args[args.length - 1]);
-    const names = args.slice(0, args.length - 2).map((s) => String(s).trim()).filter(Boolean);
-    if (!Number.isFinite(bestH) || bestH < 1 || !Number.isFinite(finH) || finH < 1 || finH > bestH || names.length === 0) {
-        console.error("📜", `  bad args: miners=${JSON.stringify(names)} bestH=${bestH} finH=${finH}`);
+    const height = Number(args[args.length - 1]);
+    const names = args.slice(0, args.length - 1).map((s) => String(s).trim()).filter(Boolean);
+    if (!Number.isFinite(height) || height < 1 || names.length === 0) {
+        console.error("📜", `  bad args: miners=${JSON.stringify(names)} h=${height}`);
         return 0;
     }
 
@@ -127,15 +121,15 @@ async function run(_zombie, networkInfo, args) {
 
     const nodeNames = Object.keys(networkInfo.nodesByName);
     console.log("📜", `  nodes = ${nodeNames.join(",")}`);
-    console.log("📜", `  watched miners = ${names.join(",")}, bestH = #${bestH}, finH = #${finH}`);
+    console.log("📜", `  watched miners = ${names.join(",")}, target height = #${height}`);
 
     const apis = await connectAll(networkInfo, nodeNames);
     try {
         const alice = apis.alice || apis[nodeNames[0]];
 
-        await waitBlockAt(alice, bestH);
-        await assertAllFinalized(apis, finH);
-        await assertFinalizedConsistency(apis, finH);
+        await waitBlockAt(alice, height);
+        await waitAllFinalized(apis, height);
+        await assertFinalizedConsistency(apis, height);
 
         // Reward halves every HalvingInterval blocks; integration runs stay far
         // below the first boundary, so every block pays the initial reward.
@@ -143,8 +137,8 @@ async function run(_zombie, networkInfo, args) {
         console.log("📜", `  reward/block = ${reward}`);
 
         const { watch, byHex } = buildWatch(names, keyring);
-        await snapshotBalances(alice, watch, bestH);
-        await countAuthoredBlocks(alice, watch, byHex, bestH);
+        await snapshotBalances(alice, watch, height);
+        await countAuthoredBlocks(alice, watch, byHex, height);
         assertRewards(watch, reward);
 
         return 1;

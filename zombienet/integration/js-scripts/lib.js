@@ -59,25 +59,33 @@ async function finalizedNumber(api) {
     return header.number.toNumber();
 }
 
-async function watchHeads(api, onHead, timeoutBlocks) {
+function watchStream(subscribe, onHead, timeoutBlocks) {
     return new Promise((resolve, reject) => {
         let unsub = null;
         let firstNum = null;
         const stop = (fn, v) => { if (unsub) { unsub(); unsub = null; } fn(v); };
-        api.rpc.chain.subscribeNewHeads(async (header) => {
+        subscribe(async (header) => {
             try {
                 const num = header.number.toNumber();
                 if (firstNum === null) firstNum = num;
                 const v = await onHead(header);
                 if (v !== undefined) return stop(resolve, v);
                 if (timeoutBlocks !== undefined && num - firstNum >= timeoutBlocks) {
-                    return stop(reject, new Error(`watchHeads: ${timeoutBlocks} blocks elapsed (#${firstNum}..#${num}) without result`));
+                    return stop(reject, new Error(`watchStream: ${timeoutBlocks} blocks elapsed (#${firstNum}..#${num}) without result`));
                 }
             } catch (e) {
                 stop(reject, e);
             }
         }).then((u) => { unsub = u; }).catch(reject);
     });
+}
+
+async function watchHeads(api, onHead, timeoutBlocks) {
+    return watchStream((cb) => api.rpc.chain.subscribeNewHeads(cb), onHead, timeoutBlocks);
+}
+
+async function watchFinalizedHeads(api, onHead, timeoutBlocks) {
+    return watchStream((cb) => api.rpc.chain.subscribeFinalizedHeads(cb), onHead, timeoutBlocks);
 }
 
 async function waitBlock(api, num) {
@@ -91,6 +99,13 @@ async function waitBlock(api, num) {
 async function waitBlockAt(api, height) {
     if ((await api.rpc.chain.getHeader()).number.toNumber() >= height) return;
     return watchHeads(api, (header) => {
+        if (header.number.toNumber() >= height) return true;
+    });
+}
+
+async function waitFinalizedAt(api, height) {
+    if (await finalizedNumber(api) >= height) return;
+    return watchFinalizedHeads(api, (header) => {
         if (header.number.toNumber() >= height) return true;
     });
 }
@@ -170,8 +185,8 @@ module.exports = {
     connect, connectAll, disconnectAll,
     sleep, getUri,
     finalizedNumber, sessionContainsValidator,
-    waitForSessionRotations, watchHeads,
-    waitBlock, waitBlockAt,
+    waitForSessionRotations, watchHeads, watchFinalizedHeads,
+    waitBlock, waitBlockAt, waitFinalizedAt,
     keyring, pair, submitExtrinsic,
     POW_ENGINE_ID, addressHex, powAuthorHexFromHeader
 };
