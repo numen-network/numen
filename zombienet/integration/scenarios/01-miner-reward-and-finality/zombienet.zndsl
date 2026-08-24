@@ -2,7 +2,8 @@ Description: Each PoW block credits exactly its author with one BlockReward; all
 Network: ./zombienet.toml
 Creds: /tmp/zn-creds.cfg
 
-# Wait for height >= 20 on alice, then verify every node has finalized
-# >= 20 and agrees on canonical hash for #1..#20, then reconcile miner
-# rewards from genesis to #20. ~20s/block, allow ~10 min wall time.
-alice: js-script ./miner-reward-and-finality.js with "alice,bob,charlie,dave,20,15" return is 1 within 600 seconds
+# 1. Wait for height >= 20 on alice
+# 2. wait for every node to finalize #20, then check all nodes agree on the hash of #1..#20
+# 3. reconcile miner rewards
+
+alice: js-script ./miner-reward-and-finality.js with "alice,bob,charlie,dave,20" return is 1 within 600 seconds
