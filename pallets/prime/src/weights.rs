@@ -40,6 +40,7 @@ use core::marker::PhantomData;
 pub trait WeightInfo {
 	fn upgrade() -> Weight;
 	fn set_key() -> Weight;
+	fn remove_registrar() -> Weight;
 }
 
 /// Weights for `pallet_prime` using the Substrate node and recommended hardware.
@@ -66,6 +67,15 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(1_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
+	/// Storage: `Prime::Key` (r:1 w:0)
+	/// Proof: `Prime::Key` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Identity::Registrars` (r:1 w:1)
+	/// Proof: `Identity::Registrars` (`max_values`: Some(1), `max_size`: Some(57002), added: 57497, mode: `MaxEncodedLen`)
+	fn remove_registrar() -> Weight {
+		Weight::from_parts(50_000_000, 58_487)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -89,6 +99,15 @@ impl WeightInfo for () {
 		// Minimum execution time: 13_036_000 picoseconds.
 		Weight::from_parts(14_073_000, 1517)
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: `Prime::Key` (r:1 w:0)
+	/// Proof: `Prime::Key` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Identity::Registrars` (r:1 w:1)
+	/// Proof: `Identity::Registrars` (`max_values`: Some(1), `max_size`: Some(57002), added: 57497, mode: `MaxEncodedLen`)
+	fn remove_registrar() -> Weight {
+		Weight::from_parts(50_000_000, 58_487)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }
