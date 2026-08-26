@@ -1,7 +1,25 @@
 use crate::{mock::*, EnsurePrime, Error, Event, Key};
 use frame_support::{assert_noop, assert_ok, traits::EnsureOrigin};
-use sp_runtime::{BuildStorage, DispatchError};
+use pallet_identity::{Judgement, RegistrarIndex};
+use sp_runtime::{traits::Hash, BuildStorage, DispatchError};
 use sp_version::RuntimeVersion;
+
+type Info = <Test as pallet_identity::Config>::IdentityInformation;
+
+fn seat_registrar() -> RegistrarIndex {
+	assert_ok!(Identity::add_registrar(RuntimeOrigin::root(), REGISTRAR));
+	pallet_identity::Registrars::<Test>::get().len() as RegistrarIndex - 1
+}
+
+fn register_subject() -> <Test as frame_system::Config>::Hash {
+	let info = Info::default();
+	let info_hash = <Test as frame_system::Config>::Hashing::hash_of(&info);
+	assert_ok!(Identity::set_identity(
+		RuntimeOrigin::signed(SUBJECT),
+		Box::new(info)
+	));
+	info_hash
+}
 
 fn upgrade_version(spec_version: u32) -> RuntimeVersion {
 	RuntimeVersion {
@@ -125,5 +143,112 @@ fn ensure_prime_origin_rejects_everyone_without_key() {
 		.unwrap();
 	sp_io::TestExternalities::from(t).execute_with(|| {
 		assert!(EnsurePrime::<Test>::try_origin(RuntimeOrigin::signed(PRIME)).is_err());
+	});
+}
+
+#[test]
+fn remove_registrar_empties_the_seat() {
+	new_test_ext().execute_with(|| {
+		let index = seat_registrar();
+
+		assert_ok!(Prime::remove_registrar(RuntimeOrigin::signed(PRIME), index));
+
+		assert_eq!(
+			pallet_identity::Registrars::<Test>::get()[index as usize],
+			None
+		);
+		System::assert_last_event(Event::<Test>::RegistrarRemoved { index }.into());
+	});
+}
+
+#[test]
+fn removed_registrar_cannot_judge() {
+	new_test_ext().execute_with(|| {
+		let index = seat_registrar();
+		let info_hash = register_subject();
+
+		assert_ok!(Identity::provide_judgement(
+			RuntimeOrigin::signed(REGISTRAR),
+			index,
+			SUBJECT,
+			Judgement::Reasonable,
+			info_hash,
+		));
+
+		assert_ok!(Prime::remove_registrar(RuntimeOrigin::signed(PRIME), index));
+
+		assert_noop!(
+			Identity::provide_judgement(
+				RuntimeOrigin::signed(REGISTRAR),
+				index,
+				SUBJECT,
+				Judgement::KnownGood,
+				info_hash,
+			),
+			pallet_identity::Error::<Test>::InvalidIndex,
+		);
+	});
+}
+
+#[test]
+fn removal_keeps_judgements_already_given() {
+	new_test_ext().execute_with(|| {
+		let index = seat_registrar();
+		let info_hash = register_subject();
+		assert_ok!(Identity::provide_judgement(
+			RuntimeOrigin::signed(REGISTRAR),
+			index,
+			SUBJECT,
+			Judgement::Reasonable,
+			info_hash,
+		));
+
+		assert_ok!(Prime::remove_registrar(RuntimeOrigin::signed(PRIME), index));
+
+		assert_eq!(
+			pallet_identity::IdentityOf::<Test>::get(SUBJECT)
+				.expect("subject registered an identity")
+				.judgements
+				.into_inner(),
+			vec![(index, Judgement::Reasonable)],
+		);
+	});
+}
+
+#[test]
+fn remove_registrar_rejects_an_empty_seat() {
+	new_test_ext().execute_with(|| {
+		let index = seat_registrar();
+		assert_ok!(Prime::remove_registrar(RuntimeOrigin::signed(PRIME), index));
+
+		assert_noop!(
+			Prime::remove_registrar(RuntimeOrigin::signed(PRIME), index),
+			Error::<Test>::NoRegistrar,
+		);
+	});
+}
+
+#[test]
+fn remove_registrar_rejects_an_index_past_the_last_seat() {
+	new_test_ext().execute_with(|| {
+		let index = seat_registrar();
+
+		assert_noop!(
+			Prime::remove_registrar(RuntimeOrigin::signed(PRIME), index + 1),
+			Error::<Test>::NoRegistrar,
+		);
+		assert_ok!(Prime::remove_registrar(RuntimeOrigin::signed(PRIME), index));
+	});
+}
+
+#[test]
+fn remove_registrar_rejects_non_prime() {
+	new_test_ext().execute_with(|| {
+		let index = seat_registrar();
+
+		assert_noop!(
+			Prime::remove_registrar(RuntimeOrigin::signed(OTHER), index),
+			Error::<Test>::RequirePrime,
+		);
 	});
 }

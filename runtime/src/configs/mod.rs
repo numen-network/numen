@@ -772,7 +772,7 @@ impl pallet_identity::Config for Runtime {
 	type SubAccountDeposit = SubAccountDeposit;
 	type MaxSubAccounts = ConstU32<100>;
 	type IdentityInformation = crate::identity_info::IdentityInfo;
-	type MaxRegistrars = ConstU32<20>;
+	type MaxRegistrars = ConstU32<1000>;
 	type Slashed = Treasury;
 	// Unreachable with no Root track and no sudo. Killing an identity only clears
 	// current state. The payload stays in the block that set it, so the power

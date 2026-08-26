@@ -14,9 +14,12 @@ codec = { features = ["derive"], workspace = true }
 frame-benchmarking = { optional = true, workspace = true }
 frame-support.workspace = true
 frame-system.workspace = true
+pallet-identity.workspace = true
 scale-info = { features = ["derive"], workspace = true }
 
 [dev-dependencies]
+pallet-balances.default-features = true
+pallet-balances.workspace = true
 sp-core.default-features = true
 sp-core.workspace = true
 sp-externalities.default-features = true
@@ -35,6 +38,7 @@ std = [
 	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",
+	"pallet-identity/std",
 	"scale-info/std",
 ]
 runtime-benchmarks = [
@@ -42,8 +46,10 @@ runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
+	"pallet-identity/runtime-benchmarks",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
+	"pallet-identity/try-runtime",
 ]
