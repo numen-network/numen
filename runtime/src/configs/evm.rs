@@ -258,8 +258,10 @@ impl pallet_ethereum::Config for Runtime {
 }
 
 parameter_types! {
-	/// 1 gwei initial base fee.
-	pub DefaultBaseFeePerGas: U256 = U256::from(1_000_000_000u64);
+	/// Initial base fee. Ethereum's 1 gwei prices gas against an ether worth
+	/// thousands. NUMN is not, so the unit runs three orders wider to keep block
+	/// space priced above free.
+	pub DefaultBaseFeePerGas: U256 = U256::from(1_000_000_000_000u64);
 	pub DefaultElasticity: Permill = Permill::from_parts(125_000);
 }
 

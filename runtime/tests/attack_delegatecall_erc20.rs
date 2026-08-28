@@ -15,7 +15,7 @@ use numen_runtime::{AccountId, Balances, Runtime, UNIT};
 use pallet_evm::{AddressMapping, Runner};
 use sp_core::{H160, U256};
 
-const MAX_FEE_PER_GAS: u64 = 2_000_000_000;
+const MAX_FEE_PER_GAS: u64 = 2_000_000_000_000;
 const GAS_LIMIT: u64 = 1_000_000;
 const ERC20_PRECOMPILE: u64 = 0x0802;
 
