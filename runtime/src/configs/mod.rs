@@ -1,16 +1,18 @@
 // Substrate and Polkadot dependencies
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{
-	derive_impl, parameter_types,
+	derive_impl,
+	dispatch::DispatchClass,
+	parameter_types,
 	traits::{
 		fungible::{Balanced, Credit, HoldConsideration},
 		tokens::{PayFromAccount, UnityAssetBalanceConversion},
-		ConstU128, ConstU32, ConstU64, ConstU8, EqualPrivilegeOnly, InstanceFilter,
+		ConstU128, ConstU32, ConstU64, ConstU8, EqualPrivilegeOnly, Get, Imbalance, InstanceFilter,
 		LinearStoragePrice, OnUnbalanced, VariantCountOf, WithdrawReasons,
 	},
 	weights::{
 		constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
-		ConstantMultiplier, Weight,
+		ConstantMultiplier, Weight, WeightToFee,
 	},
 	PalletId,
 };
@@ -19,11 +21,11 @@ use frame_system::{
 	EnsureRoot,
 };
 use pallet_session::PeriodicSessions;
-use pallet_transaction_payment::{FungibleAdapter, Multiplier, TargetedFeeAdjustment};
+use pallet_transaction_payment::{FungibleAdapter, Multiplier, MultiplierUpdate};
 use scale_info::TypeInfo;
 use sp_runtime::{
-	traits::{AccountIdConversion, BlakeTwo256, ConvertInto, IdentityLookup, Verify},
-	FixedPointNumber, Perbill, Permill, Perquintill,
+	traits::{AccountIdConversion, BlakeTwo256, Convert, ConvertInto, IdentityLookup, Verify},
+	FixedPointNumber, Perbill, Percent, Permill, Perquintill, Saturating,
 };
 use sp_version::RuntimeVersion;
 
@@ -162,47 +164,151 @@ parameter_types! {
 	pub MaximumMultiplier: Multiplier = Multiplier::saturating_from_integer(10);
 }
 
-pub type SlowAdjustingFeeUpdate<R> = TargetedFeeAdjustment<
-	R,
-	TargetBlockFullness,
-	AdjustmentVariable,
-	MinimumMultiplier,
-	MaximumMultiplier,
->;
+/// Drives the fee multiplier from whichever block dimension sits closest to its
+/// own ceiling. Encoded length counts alongside ref time and proof size, so bytes
+/// raise the price the way work does.
+pub struct FullnessFeeUpdate<R>(core::marker::PhantomData<R>);
 
-/// Routes transaction fees and tips to the block's PoW miner.
-///
-/// The miner is resolved through [`PowFindAuthor`] via `pallet-authorship`.
-/// Blocks without a PoW author digest (never produced by the canonical chain)
-/// drop the credit, burning it.
+impl<R: frame_system::Config> FullnessFeeUpdate<R> {
+	/// Usage and ceiling of the dimension nearest to full, in that dimension's unit.
+	fn limiting_dimension() -> (u128, u128) {
+		let weights = <R as frame_system::Config>::BlockWeights::get();
+		let max_weight = weights.get(DispatchClass::Normal).max_total.unwrap_or(weights.max_block);
+		let weight =
+			frame_system::Pallet::<R>::block_weight().get(DispatchClass::Normal).min(max_weight);
+
+		let lengths = <R as frame_system::Config>::BlockLength::get();
+		let max_length = (*lengths.max.get(DispatchClass::Normal)).max(1);
+		let length = frame_system::Pallet::<R>::block_size().min(max_length);
+
+		let max_ref_time = max_weight.ref_time().max(1);
+		let max_proof = max_weight.proof_size().max(1);
+		let ref_time_share = Perbill::from_rational(weight.ref_time(), max_ref_time);
+		let proof_share = Perbill::from_rational(weight.proof_size(), max_proof);
+		let length_share = Perbill::from_rational(length, max_length);
+
+		if length_share >= ref_time_share && length_share >= proof_share {
+			(length.into(), max_length.into())
+		} else if proof_share > ref_time_share {
+			(weight.proof_size().into(), max_proof.into())
+		} else {
+			(weight.ref_time().into(), max_ref_time.into())
+		}
+	}
+}
+
+impl<R: frame_system::Config> Convert<Multiplier, Multiplier> for FullnessFeeUpdate<R> {
+	fn convert(previous: Multiplier) -> Multiplier {
+		let floor = MinimumMultiplier::get();
+		let ceiling = MaximumMultiplier::get();
+		let previous = previous.max(floor);
+
+		let (used, limit) = Self::limiting_dimension();
+		let target = TargetBlockFullness::get() * limit;
+
+		let excess = used >= target;
+		let gap = used.max(target).saturating_sub(used.min(target));
+		let diff = Multiplier::saturating_from_rational(gap, limit);
+
+		let variable = AdjustmentVariable::get();
+		let half_variable_squared =
+			variable.saturating_mul(variable) / Multiplier::saturating_from_integer(2);
+
+		let first_term = variable.saturating_mul(diff);
+		let second_term = half_variable_squared.saturating_mul(diff).saturating_mul(diff);
+
+		if excess {
+			let rise = first_term.saturating_add(second_term).saturating_mul(previous);
+			previous.saturating_add(rise).clamp(floor, ceiling)
+		} else {
+			let fall = first_term.saturating_sub(second_term).saturating_mul(previous);
+			previous.saturating_sub(fall).clamp(floor, ceiling)
+		}
+	}
+}
+
+impl<R: frame_system::Config> MultiplierUpdate for FullnessFeeUpdate<R> {
+	fn min() -> Multiplier {
+		MinimumMultiplier::get()
+	}
+
+	fn max() -> Multiplier {
+		MaximumMultiplier::get()
+	}
+
+	fn target() -> Perquintill {
+		TargetBlockFullness::get()
+	}
+
+	fn variability() -> Multiplier {
+		AdjustmentVariable::get()
+	}
+}
+
+/// Share of the fee the block author keeps. The remainder burns, so a miner
+/// paying itself to fill a block gets back less than it puts in.
+pub const MINER_FEE_SHARE: Percent = Percent::from_percent(20);
+
+/// Splits substrate fees and the EVM base fee between the burn and the block's
+/// PoW miner, resolved through [`PowFindAuthor`] via `pallet-authorship`. Tips
+/// reach the miner whole. Blocks without a PoW author digest (never produced by
+/// the canonical chain) burn everything.
 pub struct DealWithFees;
 
 impl OnUnbalanced<Credit<AccountId, Balances>> for DealWithFees {
 	fn on_nonzero_unbalanced(amount: Credit<AccountId, Balances>) {
-		if let Some(author) = crate::Authorship::author() {
-			let _ = <Balances as Balanced<AccountId>>::resolve(&author, amount);
+		let Some(author) = crate::Authorship::author() else { return };
+		let keep = MINER_FEE_SHARE * amount.peek();
+		let (reward, burn) = amount.split(keep);
+		drop(burn);
+		let _ = <Balances as Balanced<AccountId>>::resolve(&author, reward);
+	}
+
+	fn on_unbalanceds(mut fees_then_tips: impl Iterator<Item = Credit<AccountId, Balances>>) {
+		let Some(fee) = fees_then_tips.next() else { return };
+		Self::on_unbalanced(fee);
+
+		if let Some(tip) = fees_then_tips.next()
+			&& let Some(author) = crate::Authorship::author()
+		{
+			let _ = <Balances as Balanced<AccountId>>::resolve(&author, tip);
 		}
 	}
 }
 
 /// Price of one weight unit in smallest units, pinned to what the EVM path
 /// charges for the same compute. `WeightPerGas` is 20,000 and the base fee is
-/// 1 gwei, so a gas unit costs 1e9 and a weight unit is worth 1e9 / 20,000.
+/// 1000 gwei, so a gas unit costs 1e12 and a weight unit is worth 1e12 / 20,000.
 /// Any other value makes one path a cheap bypass around the other.
-pub const WEIGHT_FEE: Balance = 50_000;
+pub const WEIGHT_FEE: Balance = 50_000_000;
 
 /// Price of one encoded byte, mirroring Ethereum's 16 gas per non-zero calldata
-/// byte at the same 1 gwei base fee. Keeps a length-full block within the same
-/// order as a weight-full one so neither dimension is the cheap one to abuse.
-pub const LENGTH_FEE: Balance = 16_000_000_000;
+/// byte at the same 1000 gwei base fee. Keeps a length-full block within the
+/// same order as a weight-full one so neither dimension is the cheap one to
+/// abuse.
+pub const LENGTH_FEE: Balance = 16_000_000_000_000;
+
+/// Byte price carrying the same congestion multiplier the weight price pays.
+/// `compute_fee_raw` leaves the length term flat, so the multiplier has to come
+/// from here.
+pub struct AdjustedLengthToFee;
+
+impl WeightToFee for AdjustedLengthToFee {
+	type Balance = Balance;
+
+	fn weight_to_fee(length: &Weight) -> Balance {
+		let flat = LENGTH_FEE.saturating_mul(Balance::from(length.ref_time()));
+		crate::TransactionPayment::next_fee_multiplier().saturating_mul_int(flat)
+	}
+}
 
 impl pallet_transaction_payment::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type OnChargeTransaction = FungibleAdapter<Balances, DealWithFees>;
 	type OperationalFeeMultiplier = ConstU8<5>;
 	type WeightToFee = ConstantMultiplier<Balance, ConstU128<WEIGHT_FEE>>;
-	type LengthToFee = ConstantMultiplier<Balance, ConstU128<LENGTH_FEE>>;
-	type FeeMultiplierUpdate = SlowAdjustingFeeUpdate<Runtime>;
+	type LengthToFee = AdjustedLengthToFee;
+	type FeeMultiplierUpdate = FullnessFeeUpdate<Runtime>;
 	type WeightInfo = crate::weights::pallet_transaction_payment::WeightInfo<Runtime>;
 }
 

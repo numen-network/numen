@@ -13,8 +13,8 @@ use pallet_evm::{AddressMapping, Runner};
 use numen_runtime::{AccountId, Balances, Runtime, EXISTENTIAL_DEPOSIT, UNIT};
 use sp_core::{H160, U256};
 
-/// Two gwei, comfortably above the 1 gwei `DefaultBaseFeePerGas`.
-const MAX_FEE_PER_GAS: u64 = 2_000_000_000;
+/// Twice the `DefaultBaseFeePerGas`.
+const MAX_FEE_PER_GAS: u64 = 2_000_000_000_000;
 const GAS_LIMIT: u64 = 1_000_000;
 
 /// Smallest balance an EVM caller can hold and still transact. `pallet-evm`
