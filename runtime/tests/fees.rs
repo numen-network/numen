@@ -1,6 +1,7 @@
-//! Fee routing and calibration. Substrate fees and EVM base fee plus tip all
-//! land on the PoW author from the block digest, and burn when a block carries
-//! no author. The substrate fee constants stay pinned to the EVM gas price so
+//! Fee routing and calibration. Substrate fees and the EVM base fee split
+//! between the PoW author from the block digest and the treasury, and tips
+//! reach the author whole. A block without an author pays everything to the
+//! treasury. The substrate fee constants stay pinned to the EVM gas price so
 //! neither path undercuts the other.
 
 mod common;
@@ -21,7 +22,7 @@ use frame_support::{
 use numen_runtime::{
 	configs::{
 		evm::DefaultBaseFeePerGas, DealWithFees, FullnessFeeUpdate, RuntimeBlockLength,
-		RuntimeBlockWeights, LENGTH_FEE, MINER_FEE_SHARE, WEIGHT_FEE,
+		RuntimeBlockWeights, TreasuryAccount, LENGTH_FEE, MINER_FEE_SHARE, WEIGHT_FEE,
 	},
 	AccountId, Balance, Balances, Runtime, System, TransactionPayment, UNIT,
 };
@@ -95,7 +96,7 @@ fn evm_plain_call_with_tip(caller: H160) -> fp_evm::CallInfo {
 }
 
 #[test]
-fn substrate_fees_split_between_the_author_and_the_burn() {
+fn substrate_fees_split_between_the_author_and_the_treasury() {
 	new_test_ext().execute_with(|| {
 		let author = miner();
 		set_pow_author(&author);
@@ -113,10 +114,11 @@ fn substrate_fees_split_between_the_author_and_the_burn() {
 			"the digest author keeps its share and no more",
 		);
 		assert_eq!(
-			Balances::total_issuance(),
-			issuance_before - (fee - kept),
-			"what the author does not keep burns",
+			Balances::free_balance(TreasuryAccount::get()),
+			fee - kept,
+			"what the author does not keep funds the treasury",
 		);
+		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
 	});
 }
 
@@ -162,7 +164,7 @@ fn substrate_tips_reach_the_author_whole() {
 }
 
 #[test]
-fn substrate_fees_burn_without_author_digest() {
+fn substrate_fees_reach_the_treasury_without_author_digest() {
 	new_test_ext().execute_with(|| {
 		let payer = Sr25519Keyring::Alice.to_account_id();
 		Balances::set_balance(&payer, CALLER_FUNDS);
@@ -172,10 +174,33 @@ fn substrate_fees_burn_without_author_digest() {
 		DealWithFees::on_nonzero_unbalanced(fee_credit(&payer, fee));
 
 		assert_eq!(
-			Balances::total_issuance(),
-			issuance_before - fee,
-			"an authorless fee credit burns in full",
+			Balances::free_balance(TreasuryAccount::get()),
+			fee,
+			"an authorless fee credit funds the treasury in full",
 		);
+		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
+	});
+}
+
+#[test]
+fn substrate_tips_reach_the_treasury_without_author_digest() {
+	new_test_ext().execute_with(|| {
+		let payer = Sr25519Keyring::Alice.to_account_id();
+		Balances::set_balance(&payer, CALLER_FUNDS);
+		let issuance_before = Balances::total_issuance();
+		let fee = UNIT;
+		let tip = UNIT;
+
+		DealWithFees::on_unbalanceds(
+			[fee_credit(&payer, fee), fee_credit(&payer, tip)].into_iter(),
+		);
+
+		assert_eq!(
+			Balances::free_balance(TreasuryAccount::get()),
+			fee + tip,
+			"fee and tip both fund the treasury when the block has no author",
+		);
+		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
 	});
 }
 
@@ -210,15 +235,16 @@ fn evm_base_fee_splits_while_the_tip_reaches_the_author() {
 			"the tip must bypass the zero coinbase the default handler pays",
 		);
 		assert_eq!(
-			Balances::total_issuance(),
-			issuance_before - (base_paid - MINER_FEE_SHARE * base_paid),
-			"the base fee the author does not keep burns",
+			Balances::free_balance(TreasuryAccount::get()),
+			base_paid - MINER_FEE_SHARE * base_paid,
+			"the base fee the author does not keep funds the treasury",
 		);
+		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
 	});
 }
 
 #[test]
-fn evm_fees_burn_without_author_digest() {
+fn evm_fees_reach_the_treasury_without_author_digest() {
 	new_test_ext().execute_with(|| {
 		let caller = H160::from_low_u64_be(0xFEE1);
 		let caller_acc = evm_account(caller);
@@ -231,10 +257,11 @@ fn evm_fees_burn_without_author_digest() {
 		let caller_spent = CALLER_FUNDS - Balances::free_balance(&caller_acc);
 		assert!(caller_spent > 0);
 		assert_eq!(
-			Balances::total_issuance(),
-			issuance_before - caller_spent,
-			"base fee and tip both burn in an authorless block",
+			Balances::free_balance(TreasuryAccount::get()),
+			caller_spent,
+			"base fee and tip both fund the treasury in an authorless block",
 		);
+		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
 	});
 }
 

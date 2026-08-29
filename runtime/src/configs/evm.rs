@@ -34,7 +34,7 @@ use sp_runtime::{
 	ConsensusEngineId, Permill,
 };
 
-use super::{DealWithFees, NORMAL_DISPATCH_RATIO};
+use super::{DealWithFees, TreasuryAccount, NORMAL_DISPATCH_RATIO};
 use crate::{AccountId, Authorship, Balances, Runtime, Timestamp};
 
 /// Target block gas limit (matches the Frontier template default).
@@ -176,7 +176,8 @@ impl pallet_precompiles::Config for Runtime {}
 /// EVM fee handler routing both the base fee and the priority tip to the PoW
 /// miner. Base fee goes through [`DealWithFees`]; the tip is deposited to the
 /// same author here, overriding the default that pays the `COINBASE` address
-/// (which PoW pins to zero, see [`EvmFindAuthorZero`]).
+/// (which PoW pins to zero, see [`EvmFindAuthorZero`]). Without an author
+/// digest the tip falls back to the treasury, like the base fee does.
 pub struct EvmDealWithFees;
 
 impl OnChargeEVMTransaction<Runtime> for EvmDealWithFees {
@@ -201,10 +202,9 @@ impl OnChargeEVMTransaction<Runtime> for EvmDealWithFees {
 	}
 
 	fn pay_priority_fee(tip: Self::LiquidityInfo) {
-		if let Some(tip) = tip
-			&& let Some(author) = Authorship::author()
-		{
-			let _ = <Balances as Balanced<AccountId>>::resolve(&author, tip);
+		if let Some(tip) = tip {
+			let dest = Authorship::author().unwrap_or_else(TreasuryAccount::get);
+			let _ = <Balances as Balanced<AccountId>>::resolve(&dest, tip);
 		}
 	}
 }
