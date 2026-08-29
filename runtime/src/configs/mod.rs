@@ -245,33 +245,38 @@ impl<R: frame_system::Config> MultiplierUpdate for FullnessFeeUpdate<R> {
 	}
 }
 
-/// Share of the fee the block author keeps. The remainder burns, so a miner
-/// paying itself to fill a block gets back less than it puts in.
+/// Share of the fee the block author keeps. The remainder funds the treasury,
+/// so a miner paying itself to fill a block gets back less than it puts in.
 pub const MINER_FEE_SHARE: Percent = Percent::from_percent(20);
 
-/// Splits substrate fees and the EVM base fee between the burn and the block's
-/// PoW miner, resolved through [`PowFindAuthor`] via `pallet-authorship`. Tips
-/// reach the miner whole. Blocks without a PoW author digest (never produced by
-/// the canonical chain) burn everything.
+/// Splits substrate fees and the EVM base fee between the treasury and the
+/// block's PoW miner, resolved through [`PowFindAuthor`] via
+/// `pallet-authorship`. Tips reach the miner whole. Blocks without a PoW
+/// author digest (never produced by the canonical chain) pay everything to
+/// the treasury.
 pub struct DealWithFees;
 
 impl OnUnbalanced<Credit<AccountId, Balances>> for DealWithFees {
 	fn on_nonzero_unbalanced(amount: Credit<AccountId, Balances>) {
-		let Some(author) = crate::Authorship::author() else { return };
-		let keep = MINER_FEE_SHARE * amount.peek();
-		let (reward, burn) = amount.split(keep);
-		drop(burn);
-		let _ = <Balances as Balanced<AccountId>>::resolve(&author, reward);
+		let rest = match crate::Authorship::author() {
+			Some(author) => {
+				let keep = MINER_FEE_SHARE * amount.peek();
+				let (reward, rest) = amount.split(keep);
+				let _ = <Balances as Balanced<AccountId>>::resolve(&author, reward);
+				rest
+			}
+			None => amount,
+		};
+		let _ = <Balances as Balanced<AccountId>>::resolve(&TreasuryAccount::get(), rest);
 	}
 
 	fn on_unbalanceds(mut fees_then_tips: impl Iterator<Item = Credit<AccountId, Balances>>) {
 		let Some(fee) = fees_then_tips.next() else { return };
 		Self::on_unbalanced(fee);
 
-		if let Some(tip) = fees_then_tips.next()
-			&& let Some(author) = crate::Authorship::author()
-		{
-			let _ = <Balances as Balanced<AccountId>>::resolve(&author, tip);
+		if let Some(tip) = fees_then_tips.next() {
+			let dest = crate::Authorship::author().unwrap_or_else(TreasuryAccount::get);
+			let _ = <Balances as Balanced<AccountId>>::resolve(&dest, tip);
 		}
 	}
 }

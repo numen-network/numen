@@ -10,7 +10,9 @@ use common::new_test_ext;
 use fp_evm::MAX_TRANSACTION_GAS_LIMIT;
 use frame_support::traits::tokens::fungible::Mutate;
 use pallet_evm::{AddressMapping, Runner};
-use numen_runtime::{AccountId, Balances, Runtime, EXISTENTIAL_DEPOSIT, UNIT};
+use numen_runtime::{
+	configs::TreasuryAccount, AccountId, Balances, Runtime, EXISTENTIAL_DEPOSIT, UNIT,
+};
 use sp_core::{H160, U256};
 
 /// Twice the `DefaultBaseFeePerGas`.
@@ -240,18 +242,19 @@ fn balances_erc20_precompile_transfer_moves_native_funds() {
 		let initial = 7_500 * UNIT;
 		let amount = 1_000 * UNIT;
 		Balances::set_balance(&caller_acc, initial);
-		let issuance_before = Balances::total_issuance();
+		let treasury_before = Balances::free_balance(TreasuryAccount::get());
 
 		let ret = call_erc20_precompile(caller, encode_transfer(recipient, amount));
 		assert_eq!(U256::from_big_endian(&ret), U256::one(), "transfer returns bool true");
 
-		// Everything leaving the caller is either transferred or burned as gas.
-		let gas_burn = issuance_before - Balances::total_issuance();
+		// Everything leaving the caller is either transferred or paid as gas,
+		// and gas from this authorless block lands in the treasury.
+		let gas_paid = Balances::free_balance(TreasuryAccount::get()) - treasury_before;
 		assert_eq!(Balances::free_balance(&recipient_acc), amount);
 		assert_eq!(
 			initial - Balances::free_balance(&caller_acc),
-			amount + gas_burn,
-			"caller debit must equal amount plus gas burn"
+			amount + gas_paid,
+			"caller debit must equal amount plus gas"
 		);
 	});
 }
@@ -272,12 +275,12 @@ fn balances_erc20_precompile_withdraw_moves_funds_back_to_substrate() {
 		let amount = 1_000 * UNIT;
 		Balances::set_balance(&caller_acc, initial);
 		assert_eq!(Balances::free_balance(&dest_acc), 0);
-		let issuance_before = Balances::total_issuance();
+		let treasury_before = Balances::free_balance(TreasuryAccount::get());
 
 		let ret = call_erc20_precompile(caller, encode_withdraw(dest_bytes, amount));
 		assert_eq!(U256::from_big_endian(&ret), U256::one(), "withdraw returns bool true");
 
-		let gas_burn = issuance_before - Balances::total_issuance();
+		let gas_paid = Balances::free_balance(TreasuryAccount::get()) - treasury_before;
 		assert_eq!(
 			Balances::free_balance(&dest_acc),
 			amount,
@@ -285,8 +288,8 @@ fn balances_erc20_precompile_withdraw_moves_funds_back_to_substrate() {
 		);
 		assert_eq!(
 			initial - Balances::free_balance(&caller_acc),
-			amount + gas_burn,
-			"caller debit must equal amount plus gas burn"
+			amount + gas_paid,
+			"caller debit must equal amount plus gas"
 		);
 	});
 }
