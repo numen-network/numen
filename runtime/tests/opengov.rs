@@ -163,9 +163,7 @@ fn backed_small_track_referendum(voter: &AccountId, call: RuntimeCall) -> u32 {
 				.expect("one judgement fits the bound"),
 			deposit: 0,
 			info: numen_runtime::identity_info::IdentityInfo {
-				x: pallet_identity::Data::Raw(
-					b"@voter".to_vec().try_into().expect("the handle fits the field bound"),
-				),
+				x: b"voter".to_vec().try_into().expect("the handle fits the field bound"),
 				..Default::default()
 			},
 		},

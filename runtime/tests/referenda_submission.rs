@@ -1,7 +1,7 @@
 //! Referendum submission gate. Only accounts backed by a qualified identity
 //! may open referenda. Qualified means judged Reasonable or KnownGood while
-//! carrying at least one plaintext social channel among x, telegram and
-//! discord, and a sub account qualifies through its parent.
+//! carrying at least one social channel among x, telegram and discord, and a
+//! sub account qualifies through its parent.
 
 mod common;
 
@@ -12,8 +12,9 @@ use frame_support::{
 	traits::{schedule::DispatchTime, tokens::fungible::Mutate, Bounded},
 };
 use numen_runtime::{
-	configs::governance::pallet_custom_origins, identity_info::IdentityInfo, AccountId, Balance,
-	Balances, Identity, Referenda, Runtime, RuntimeCall, RuntimeOrigin, UNIT,
+	configs::governance::pallet_custom_origins,
+	identity_info::{IdentityInfo, Text},
+	AccountId, Balance, Balances, Identity, Referenda, Runtime, RuntimeCall, RuntimeOrigin, UNIT,
 };
 use pallet_identity::{Data, Judgement};
 use sp_keyring::Sr25519Keyring;
@@ -36,11 +37,11 @@ fn funded(keyring: Sr25519Keyring) -> AccountId {
 	who
 }
 
-fn raw(bytes: &[u8]) -> Data {
-	Data::Raw(bytes.to_vec().try_into().expect("raw data fits the field bound"))
+fn raw<const N: u32>(bytes: &[u8]) -> Text<N> {
+	bytes.to_vec().try_into().expect("bytes fit the field bound")
 }
 
-fn identity_info(x: Data) -> IdInfo {
+fn identity_info(x: Text<32>) -> IdInfo {
 	IdentityInfo { display: raw(b"proposer"), x, ..Default::default() }
 }
 
@@ -138,24 +139,6 @@ fn judged_identity_without_qualifying_channel_cannot_submit() {
 		assert_noop!(submit(&who), DispatchError::BadOrigin);
 		assert_eq!(referendum_count(), 0);
 	});
-}
-
-#[test]
-fn non_plaintext_social_channel_cannot_submit() {
-	let commitment = <Runtime as frame_system::Config>::Hashing::hash(b"@proposer").0;
-	let hashed_x = identity_info(Data::BlakeTwo256(commitment));
-	let empty_telegram =
-		IdentityInfo { display: raw(b"proposer"), telegram: raw(b""), ..Default::default() };
-
-	for info in [hashed_x, empty_telegram] {
-		new_test_ext().execute_with(|| {
-			let who = funded(Sr25519Keyring::Alice);
-			judged_identity(&who, Judgement::Reasonable, info.clone());
-
-			assert_noop!(submit(&who), DispatchError::BadOrigin);
-			assert_eq!(referendum_count(), 0);
-		});
-	}
 }
 
 #[test]
