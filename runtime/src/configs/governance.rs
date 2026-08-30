@@ -12,7 +12,7 @@ use frame_support::{
 	traits::{AsEnsureOriginWithArg, ConstU32, Contains, EitherOf, EnsureOrigin},
 };
 use frame_system::{EnsureSigned, RawOrigin};
-use pallet_identity::{Data, Judgement};
+use pallet_identity::Judgement;
 use pallet_referenda::{Curve, Track, TrackInfo};
 use sp_runtime::{str_array as s, FixedI64};
 
@@ -222,15 +222,9 @@ pub type TreasurySpender = EitherOf<SmallSpender, EitherOf<MediumSpender, BigSpe
 /// Qualified identity standard shared by every entry point that gates on
 /// identity. An account qualifies when a registrar judged its identity
 /// Reasonable or KnownGood and the identity carries at least one social
-/// channel among x, telegram and discord registered as plaintext. Hashed
-/// channel commitments do not count since the point is public attribution.
-/// A sub account qualifies through its parent since the SuperOf link keeps
-/// the owner traceable.
+/// channel among x, telegram and discord. A sub account qualifies through its
+/// parent since the SuperOf link keeps the owner traceable.
 pub struct QualifiedIdentity;
-
-fn plaintext(data: &Data) -> bool {
-	matches!(data, Data::Raw(bytes) if !bytes.is_empty())
-}
 
 impl QualifiedIdentity {
 	fn account_qualifies(who: &AccountId) -> bool {
@@ -241,7 +235,7 @@ impl QualifiedIdentity {
 				.any(|(_, judgement)| matches!(judgement, Judgement::Reasonable | Judgement::KnownGood));
 			let info = registration.info;
 			let channel =
-				plaintext(&info.x) || plaintext(&info.telegram) || plaintext(&info.discord);
+				!info.x.is_empty() || !info.telegram.is_empty() || !info.discord.is_empty();
 			judged && channel
 		})
 	}
@@ -278,14 +272,14 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureQualifiedIdentity {
 	}
 }
 
-/// Write a judged identity carrying a plaintext social channel straight into
+/// Write a judged identity carrying a social channel straight into
 /// storage so `who` passes [`QualifiedIdentity`]. Benchmarks cannot run a
 /// registrar, yet every gate built on the identity standard needs an account
 /// that clears it.
 #[cfg(feature = "runtime-benchmarks")]
 pub fn qualify_identity(who: &AccountId) {
 	let info = crate::identity_info::IdentityInfo {
-		x: Data::Raw(b"@bench".to_vec().try_into().expect("handle fits the field bound")),
+		x: b"bench".to_vec().try_into().expect("handle fits the field bound"),
 		..Default::default()
 	};
 	let registration = pallet_identity::Registration {

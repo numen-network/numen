@@ -50,9 +50,7 @@ fn ongoing_referendum(submitter: &AccountId) -> u32 {
 				.expect("one judgement fits the bound"),
 			deposit: 0,
 			info: numen_runtime::identity_info::IdentityInfo {
-				x: pallet_identity::Data::Raw(
-					b"@submitter".to_vec().try_into().expect("handle fits the raw bound"),
-				),
+				x: b"submitter".to_vec().try_into().expect("the handle fits the field bound"),
 				..Default::default()
 			},
 		},

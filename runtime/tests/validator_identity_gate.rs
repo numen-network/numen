@@ -10,10 +10,11 @@ use frame_support::{
 	traits::{tokens::fungible::Mutate, Contains},
 };
 use numen_runtime::{
-	identity_info::IdentityInfo, AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin,
+	identity_info::{IdentityInfo, Text},
+	AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin,
 	UNIT,
 };
-use pallet_identity::{Data, Judgement};
+use pallet_identity::Judgement;
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::traits::{Hash, StaticLookup};
 
@@ -26,11 +27,11 @@ fn src(who: &AccountId) -> <<Runtime as frame_system::Config>::Lookup as StaticL
 	<Runtime as frame_system::Config>::Lookup::unlookup(who.clone())
 }
 
-fn raw(bytes: &[u8]) -> Data {
-	Data::Raw(bytes.to_vec().try_into().expect("raw data fits the field bound"))
+fn raw<const N: u32>(bytes: &[u8]) -> Text<N> {
+	bytes.to_vec().try_into().expect("bytes fit the field bound")
 }
 
-fn identity_info(x: Data) -> IdInfo {
+fn identity_info(x: Text<32>) -> IdInfo {
 	IdentityInfo { display: raw(b"candidate"), x, ..Default::default() }
 }
 
@@ -62,7 +63,7 @@ fn judged_identity(who: &AccountId, info: IdInfo) {
 fn judged_identity_without_channel_fails_the_gate() {
 	new_test_ext().execute_with(|| {
 		let who = Sr25519Keyring::Alice.to_account_id();
-		judged_identity(&who, identity_info(Data::None));
+		judged_identity(&who, identity_info(Default::default()));
 
 		assert!(!Gate::contains(&who));
 	});
