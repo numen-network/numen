@@ -74,9 +74,9 @@ pub struct IdentityInfo {
 	/// self description.
 	pub about: Text<2048>,
 	/// website. `https://` is prepended.
-	pub web: Text<128>,
+	pub web: Text<64>,
 	/// email address.
-	pub email: Text<128>,
+	pub email: Text<32>,
 	/// GitHub username.
 	pub github: Text<32>,
 	/// Matrix handle, in the `@user:server` form.
