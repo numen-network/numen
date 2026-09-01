@@ -3,12 +3,12 @@ use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{
 	derive_impl,
 	dispatch::DispatchClass,
-	parameter_types,
+	ensure, parameter_types,
 	traits::{
-		fungible::{Balanced, Credit, HoldConsideration},
-		tokens::{PayFromAccount, UnityAssetBalanceConversion},
-		ConstU128, ConstU32, ConstU64, ConstU8, EqualPrivilegeOnly, Get, Imbalance, InstanceFilter,
-		LinearStoragePrice, OnUnbalanced, VariantCountOf, WithdrawReasons,
+		fungible::{self, Balanced, Credit},
+		tokens::{PayFromAccount, Precision, UnityAssetBalanceConversion},
+		ConstU128, ConstU32, ConstU64, ConstU8, Consideration, EqualPrivilegeOnly, Footprint, Get,
+		Imbalance, InstanceFilter, OnUnbalanced, VariantCountOf, WithdrawReasons,
 	},
 	weights::{
 		constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
@@ -25,7 +25,7 @@ use pallet_transaction_payment::{FungibleAdapter, Multiplier, MultiplierUpdate};
 use scale_info::TypeInfo;
 use sp_runtime::{
 	traits::{AccountIdConversion, BlakeTwo256, Convert, ConvertInto, IdentityLookup, Verify},
-	FixedPointNumber, Perbill, Percent, Permill, Perquintill, Saturating,
+	DispatchError, FixedPointNumber, Perbill, Percent, Permill, Perquintill, Saturating,
 };
 use sp_version::RuntimeVersion;
 
@@ -840,11 +840,68 @@ impl pallet_scheduler::Config for Runtime {
 	type BlockNumberProvider = System;
 }
 
-parameter_types! {
-	pub const PreimageBaseDeposit: Balance = 5 * UNIT;
-	pub const PreimageByteDeposit: Balance = UNIT / 100;
-	pub const PreimageHoldReason: RuntimeHoldReason =
-		RuntimeHoldReason::Preimage(pallet_preimage::HoldReason::Preimage);
+/// Flat part of the price of noting a preimage. Held while the bytes stay on
+/// chain and released when they are cleared.
+pub const PREIMAGE_BASE_DEPOSIT: Balance = 5 * UNIT;
+
+/// Per byte part of the hold, at the shared permanent storage rate.
+pub const PREIMAGE_BYTE_DEPOSIT: Balance = UNIT / 100;
+
+/// Ceiling on one noted preimage. A referendum pitch past a summary belongs
+/// off chain, and every other legitimate preimage sits far below this.
+#[cfg(not(feature = "runtime-benchmarks"))]
+pub const PREIMAGE_MAX_SIZE: u32 = 16 * 1024;
+/// The upstream benchmark sweeps note_preimage up to the pallet ceiling.
+#[cfg(feature = "runtime-benchmarks")]
+pub const PREIMAGE_MAX_SIZE: u32 = pallet_preimage::MAX_SIZE;
+
+const PREIMAGE_HOLD: RuntimeHoldReason =
+	RuntimeHoldReason::Preimage(pallet_preimage::HoldReason::Preimage);
+
+/// What noting a preimage costs. The base and the byte price are held and
+/// come back when the bytes are cleared, and a blob over the size ceiling is
+/// refused outright. Tickets written by the `HoldConsideration` scheme this
+/// replaces decode as the amount they hold and are released in full, so no
+/// migration.
+#[derive(
+	Clone, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug,
+)]
+pub struct PreimageTicket(Balance);
+
+impl Consideration<AccountId, Footprint> for PreimageTicket {
+	fn new(who: &AccountId, footprint: Footprint) -> Result<Self, DispatchError> {
+		let bytes = footprint.count.saturating_mul(footprint.size);
+		ensure!(bytes <= u64::from(PREIMAGE_MAX_SIZE), DispatchError::Exhausted);
+		let held = PREIMAGE_BASE_DEPOSIT
+			.saturating_add(PREIMAGE_BYTE_DEPOSIT.saturating_mul(bytes.into()));
+		<Balances as fungible::MutateHold<AccountId>>::hold(&PREIMAGE_HOLD, who, held)?;
+		Ok(Self(held))
+	}
+
+	// The pallet keys bytes by hash and length together, so a ticket's
+	// footprint never changes under it
+	fn update(self, _: &AccountId, _: Footprint) -> Result<Self, DispatchError> {
+		Ok(self)
+	}
+
+	fn drop(self, who: &AccountId) -> Result<(), DispatchError> {
+		<Balances as fungible::MutateHold<AccountId>>::release(
+			&PREIMAGE_HOLD,
+			who,
+			self.0,
+			Precision::BestEffort,
+		)
+		.map(|_| ())
+	}
+
+	#[cfg(feature = "runtime-benchmarks")]
+	fn ensure_successful(who: &AccountId, footprint: Footprint) {
+		let bytes: Balance = footprint.count.saturating_mul(footprint.size).into();
+		let worst = <Balances as fungible::Inspect<AccountId>>::minimum_balance()
+			.saturating_add(PREIMAGE_BASE_DEPOSIT)
+			.saturating_add(PREIMAGE_BYTE_DEPOSIT.saturating_mul(bytes));
+		let _ = <Balances as fungible::Mutate<AccountId>>::mint_into(who, worst);
+	}
 }
 
 impl pallet_preimage::Config for Runtime {
@@ -852,12 +909,7 @@ impl pallet_preimage::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = Balances;
 	type ManagerOrigin = EnsureRoot<AccountId>;
-	type Consideration = HoldConsideration<
-		AccountId,
-		Balances,
-		PreimageHoldReason,
-		LinearStoragePrice<PreimageBaseDeposit, PreimageByteDeposit, Balance>,
-	>;
+	type Consideration = PreimageTicket;
 }
 
 parameter_types! {
