@@ -11,8 +11,11 @@ use frame_support::{
 	traits::EnsureOrigin,
 };
 use numen_runtime::{
-	configs::evm::FrontierPrecompiles,
-	configs::governance::{pallet_custom_origins, TracksInfo, TreasurySpender},
+	configs::{
+		self,
+		evm::FrontierPrecompiles,
+		governance::{pallet_custom_origins, TracksInfo, TreasurySpender},
+	},
 	Balance, Runtime, RuntimeOrigin,
 };
 use pallet_referenda::TracksInfo as _;
@@ -66,6 +69,22 @@ fn published_caps_and_referendum_tracks_describe_the_same_set() {
 	let tracks: Vec<u16> = TracksInfo::tracks().map(|track| track.id).collect();
 
 	assert_eq!(capped, tracks);
+}
+
+/// A wallet prices a referendum text off these before noting it. A stale copy
+/// quotes terms the chain will not honor.
+#[test]
+fn published_preimage_terms_are_what_the_ticket_charges() {
+	let base: Balance = Decode::decode(&mut &published("Origins", "PreimageBaseDeposit")[..])
+		.expect("PreimageBaseDeposit is published as a balance");
+	let deposit: Balance = Decode::decode(&mut &published("Origins", "PreimageByteDeposit")[..])
+		.expect("PreimageByteDeposit is published as a balance");
+	let cap: u32 = Decode::decode(&mut &published("Origins", "PreimageMaxSize")[..])
+		.expect("PreimageMaxSize is published as a byte count");
+
+	assert_eq!(base, configs::PREIMAGE_BASE_DEPOSIT);
+	assert_eq!(deposit, configs::PREIMAGE_BYTE_DEPOSIT);
+	assert_eq!(cap, configs::PREIMAGE_MAX_SIZE);
 }
 
 /// An external miner reads this to decide whether it speaks the protocol this

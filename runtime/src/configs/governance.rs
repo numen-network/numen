@@ -98,8 +98,9 @@ pub mod pallet_custom_origins {
 	}
 
 	/// Published so a caller can size a proposal against the track it will run
-	/// on. The ceilings live in an `EnsureOrigin` success value. Nothing else
-	/// in the static metadata reaches them.
+	/// on and price its text before noting it. The ceilings live in an
+	/// `EnsureOrigin` success value and the preimage terms on the runtime's
+	/// ticket. Nothing else in the static metadata reaches either.
 	#[pallet::extra_constants]
 	impl<T: Config> Pallet<T> {
 		#[pallet::constant_name(SpendCaps)]
@@ -109,6 +110,24 @@ pub mod pallet_custom_origins {
 				(1, Origin::MediumSpender, MEDIUM_SPENDER_CAP),
 				(2, Origin::BigSpender, BIG_SPENDER_CAP),
 			]
+		}
+
+		/// Held when noting a preimage and released when the bytes are cleared.
+		#[pallet::constant_name(PreimageBaseDeposit)]
+		fn preimage_base_deposit() -> Balance {
+			crate::configs::PREIMAGE_BASE_DEPOSIT
+		}
+
+		/// Held for each noted byte and released together with the base.
+		#[pallet::constant_name(PreimageByteDeposit)]
+		fn preimage_byte_deposit() -> Balance {
+			crate::configs::PREIMAGE_BYTE_DEPOSIT
+		}
+
+		/// Ceiling in bytes on a single noted preimage.
+		#[pallet::constant_name(PreimageMaxSize)]
+		fn preimage_max_size() -> u32 {
+			crate::configs::PREIMAGE_MAX_SIZE
 		}
 	}
 }
