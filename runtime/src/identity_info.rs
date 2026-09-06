@@ -23,7 +23,7 @@ pub type Text<const N: u32> = BoundedVec<u8, ConstU32<N>>;
 pub enum IdentityField {
 	Display,
 	Avatar,
-	About,
+	Bio,
 	Web,
 	Email,
 	Github,
@@ -41,7 +41,7 @@ impl TypeInfo for IdentityField {
 			Variants::new()
 				.variant("Display", |v| v.index(0))
 				.variant("Avatar", |v| v.index(1))
-				.variant("About", |v| v.index(2))
+				.variant("Bio", |v| v.index(2))
 				.variant("Web", |v| v.index(3))
 				.variant("Email", |v| v.index(4))
 				.variant("Github", |v| v.index(5))
@@ -72,7 +72,7 @@ pub struct IdentityInfo {
 	/// picture URL.
 	pub avatar: Text<128>,
 	/// self description.
-	pub about: Text<2048>,
+	pub bio: Text<2048>,
 	/// website. `https://` is prepended.
 	pub web: Text<64>,
 	/// email address.
@@ -95,7 +95,7 @@ impl IdentityInfo {
 		for (field, filled) in [
 			(IdentityField::Display, !self.display.is_empty()),
 			(IdentityField::Avatar, !self.avatar.is_empty()),
-			(IdentityField::About, !self.about.is_empty()),
+			(IdentityField::Bio, !self.bio.is_empty()),
 			(IdentityField::Web, !self.web.is_empty()),
 			(IdentityField::Email, !self.email.is_empty()),
 			(IdentityField::Github, !self.github.is_empty()),
@@ -128,7 +128,7 @@ impl IdentityInformationProvider for IdentityInfo {
 		IdentityInfo {
 			display: filled(),
 			avatar: filled(),
-			about: filled(),
+			bio: filled(),
 			web: filled(),
 			email: filled(),
 			github: filled(),
