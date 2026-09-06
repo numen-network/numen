@@ -113,7 +113,7 @@ fn prime_cannot_kill_identity() {
 fn identity_fields_keep_their_bits() {
 	assert_eq!(IdentityField::Display as u64, 1 << 0);
 	assert_eq!(IdentityField::Avatar as u64, 1 << 1);
-	assert_eq!(IdentityField::About as u64, 1 << 2);
+	assert_eq!(IdentityField::Bio as u64, 1 << 2);
 	assert_eq!(IdentityField::Web as u64, 1 << 3);
 	assert_eq!(IdentityField::Email as u64, 1 << 4);
 	assert_eq!(IdentityField::Github as u64, 1 << 5);
