@@ -97,9 +97,6 @@ pub mod pallet_custom_origins {
 		}
 	}
 
-	/// Published so a caller can size a proposal against the track it will run
-	/// on. The ceilings live in an `EnsureOrigin` success value. Nothing else
-	/// in the static metadata reaches them.
 	#[pallet::extra_constants]
 	impl<T: Config> Pallet<T> {
 		#[pallet::constant_name(SpendCaps)]
@@ -109,6 +106,16 @@ pub mod pallet_custom_origins {
 				(1, Origin::MediumSpender, MEDIUM_SPENDER_CAP),
 				(2, Origin::BigSpender, BIG_SPENDER_CAP),
 			]
+		}
+
+		#[pallet::constant_name(PreimageBaseDeposit)]
+		fn preimage_base_deposit() -> Balance {
+			crate::configs::PreimageBaseDeposit::get()
+		}
+
+		#[pallet::constant_name(PreimageByteDeposit)]
+		fn preimage_byte_deposit() -> Balance {
+			crate::configs::PreimageByteDeposit::get()
 		}
 	}
 }
