@@ -203,7 +203,7 @@ impl pallet_referenda::TracksInfo<Balance, BlockNumber> for TracksInfo {
 parameter_types! {
 	pub const VoteLockingPeriod: BlockNumber = 7 * DAYS;
 	pub const AlarmInterval: BlockNumber = 1;
-	pub const SubmissionDeposit: Balance = 100 * UNIT;
+	pub const SubmissionDeposit: Balance = 5 * UNIT;
 	pub const UndecidingTimeout: BlockNumber = 14 * DAYS;
 }
 
