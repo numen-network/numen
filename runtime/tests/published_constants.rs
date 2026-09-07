@@ -4,19 +4,32 @@
 //! A published copy is only worth having while it still agrees with the thing
 //! it speaks for, so each gets pinned to its source here.
 
+mod common;
+
 use codec::Decode;
+use common::new_test_ext;
 use fp_evm::{IsPrecompileResult, PrecompileSet};
 use frame_support::{
 	__private::metadata::{RuntimeMetadata, RuntimeMetadataPrefixed},
-	traits::EnsureOrigin,
+	assert_ok,
+	traits::{
+		tokens::fungible::{InspectHold, Mutate},
+		EnsureOrigin,
+	},
 };
 use numen_runtime::{
 	configs::evm::FrontierPrecompiles,
 	configs::governance::{pallet_custom_origins, TracksInfo, TreasurySpender},
-	Balance, Runtime, RuntimeOrigin,
+	Balance, Balances, Preimage, Runtime, RuntimeHoldReason, RuntimeOrigin, UNIT,
 };
 use pallet_referenda::TracksInfo as _;
 use sp_core::H160;
+use sp_keyring::Sr25519Keyring;
+
+const FUNDS: Balance = 10_000 * UNIT;
+
+const PREIMAGE_HOLD: RuntimeHoldReason =
+	RuntimeHoldReason::Preimage(pallet_preimage::HoldReason::Preimage);
 
 /// SCALE payload the metadata carries for one published constant.
 fn published(pallet: &str, constant: &str) -> Vec<u8> {
@@ -66,6 +79,36 @@ fn published_caps_and_referendum_tracks_describe_the_same_set() {
 	let tracks: Vec<u16> = TracksInfo::tracks().map(|track| track.id).collect();
 
 	assert_eq!(capped, tracks);
+}
+
+/// A wallet quotes the hold on a referendum text before anyone signs for it.
+/// Noting at two lengths tells the flat part apart from the per byte part, so a
+/// published figure that drifts from what the pallet charges cannot hide inside
+/// the sum.
+#[test]
+fn published_preimage_terms_are_what_noting_bytes_holds() {
+	let base: Balance = Decode::decode(&mut &published("Origins", "PreimageBaseDeposit")[..])
+		.expect("PreimageBaseDeposit is published as a balance");
+	let per_byte: Balance = Decode::decode(&mut &published("Origins", "PreimageByteDeposit")[..])
+		.expect("PreimageByteDeposit is published as a balance");
+
+	new_test_ext().execute_with(|| {
+		for (keyring, len) in [(Sr25519Keyring::Alice, 1usize), (Sr25519Keyring::Bob, 4_096)] {
+			let who = keyring.to_account_id();
+			Balances::set_balance(&who, FUNDS);
+
+			assert_ok!(Preimage::note_preimage(
+				RuntimeOrigin::signed(who.clone()),
+				vec![0u8; len]
+			));
+
+			assert_eq!(
+				Balances::balance_on_hold(&PREIMAGE_HOLD, &who),
+				base + per_byte * len as Balance,
+				"{len} bytes",
+			);
+		}
+	});
 }
 
 /// An external miner reads this to decide whether it speaks the protocol this
