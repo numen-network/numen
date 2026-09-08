@@ -124,14 +124,18 @@ const fn percent(x: i32) -> FixedI64 {
 	FixedI64::from_rational(x as u128, 100)
 }
 
-// Approval drops quickly toward its floor and holds there, so the hard bar only
-// bites while a proposal is fresh. Support still falls linearly.
-const APP_SMALL: Curve = Curve::make_reciprocal(1, 7, percent(80), percent(50), percent(100));
-const SUP_SMALL: Curve = Curve::make_linear(7, 7, percent(0), percent(50));
-const APP_MEDIUM: Curve = Curve::make_reciprocal(2, 14, percent(85), percent(60), percent(100));
-const SUP_MEDIUM: Curve = Curve::make_linear(14, 14, percent(2), percent(50));
-const APP_BIG: Curve = Curve::make_reciprocal(4, 28, percent(90), percent(70), percent(100));
-const SUP_BIG: Curve = Curve::make_linear(28, 28, percent(5), percent(50));
+const fn per_mille(x: i32) -> FixedI64 {
+	FixedI64::from_rational(x as u128, 1000)
+}
+
+// Approval falls to a bare majority, taking longer the more a track can spend.
+// Every track takes the same support curve.
+const APP_SMALL_SPENDER: Curve = Curve::make_linear(7, 28, percent(50), percent(100));
+const SUP_SMALL_SPENDER: Curve = Curve::make_reciprocal(12, 28, per_mille(5), per_mille(0), percent(50));
+const APP_MEDIUM_SPENDER: Curve = Curve::make_linear(14, 28, percent(50), percent(100));
+const SUP_MEDIUM_SPENDER: Curve = Curve::make_reciprocal(12, 28, percent(1), per_mille(5), percent(50));
+const APP_BIG_SPENDER: Curve = Curve::make_linear(28, 28, percent(50), percent(100));
+const SUP_BIG_SPENDER: Curve = Curve::make_reciprocal(12, 28, percent(2), per_mille(10), percent(50));
 
 const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 	Track {
@@ -140,12 +144,12 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 			name: s("small_spender"),
 			max_deciding: 100,
 			decision_deposit: 100 * UNIT,
-			prepare_period: HOURS,
-			decision_period: 7 * DAYS,
+			prepare_period: 4 * HOURS,
+			decision_period: 28 * DAYS,
 			confirm_period: DAYS,
-			min_enactment_period: HOURS,
-			min_approval: APP_SMALL,
-			min_support: SUP_SMALL,
+			min_enactment_period: DAYS,
+			min_approval: APP_SMALL_SPENDER,
+			min_support: SUP_SMALL_SPENDER,
 		},
 	},
 	Track {
@@ -154,12 +158,12 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 			name: s("medium_spender"),
 			max_deciding: 20,
 			decision_deposit: 1_000 * UNIT,
-			prepare_period: HOURS,
-			decision_period: 14 * DAYS,
+			prepare_period: 4 * HOURS,
+			decision_period: 28 * DAYS,
 			confirm_period: 3 * DAYS,
-			min_enactment_period: HOURS,
-			min_approval: APP_MEDIUM,
-			min_support: SUP_MEDIUM,
+			min_enactment_period: DAYS,
+			min_approval: APP_MEDIUM_SPENDER,
+			min_support: SUP_MEDIUM_SPENDER,
 		},
 	},
 	Track {
@@ -168,12 +172,12 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 			name: s("big_spender"),
 			max_deciding: 2,
 			decision_deposit: 10_000 * UNIT,
-			prepare_period: HOURS,
+			prepare_period: 4 * HOURS,
 			decision_period: 28 * DAYS,
 			confirm_period: 7 * DAYS,
-			min_enactment_period: HOURS,
-			min_approval: APP_BIG,
-			min_support: SUP_BIG,
+			min_enactment_period: DAYS,
+			min_approval: APP_BIG_SPENDER,
+			min_support: SUP_BIG_SPENDER,
 		},
 	},
 ];
