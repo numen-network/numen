@@ -1,5 +1,6 @@
-//! Governance brakes wiring. Referenda cancel and kill plus the treasury
-//! reject origin answer only to the prime key, with root explicitly locked out.
+//! Governance brakes wiring. Referenda cancel and kill answer to the prime key
+//! and to a track apiece, while the treasury reject origin stays prime alone.
+//! Root is locked out of all of them.
 
 mod common;
 
@@ -147,7 +148,7 @@ fn prime_kills_referendum_and_slashes_both_deposits() {
 }
 
 #[test]
-fn cancel_referendum_rejects_non_prime_origins() {
+fn cancel_referendum_rejects_outsiders_and_root() {
 	new_test_ext().execute_with(|| {
 		install_prime();
 		let submitter = Sr25519Keyring::Alice.to_account_id();
@@ -165,7 +166,7 @@ fn cancel_referendum_rejects_non_prime_origins() {
 }
 
 #[test]
-fn kill_referendum_rejects_non_prime_origins() {
+fn kill_referendum_rejects_outsiders_and_root() {
 	new_test_ext().execute_with(|| {
 		install_prime();
 		let submitter = Sr25519Keyring::Alice.to_account_id();
@@ -230,5 +231,73 @@ fn close_bounty_rejects_non_prime_origins() {
 			pallet_bounties::Bounties::<Runtime>::get(id).is_some(),
 			"the proposal survives rejected close attempts",
 		);
+	});
+}
+
+/// prime is not the only hand on the brake. A referendum won on the canceller
+/// track stops another one without a prime signature anywhere.
+#[test]
+fn canceller_track_cancels_referendum() {
+	new_test_ext().execute_with(|| {
+		let submitter = Sr25519Keyring::Alice.to_account_id();
+		let index = ongoing_referendum(&submitter);
+
+		assert_ok!(Referenda::cancel(
+			RuntimeOrigin::from(pallet_custom_origins::Origin::ReferendumCanceller),
+			index,
+		));
+
+		assert!(matches!(
+			ReferendumInfoFor::<Runtime>::get(index),
+			Some(ReferendumInfo::Cancelled(..)),
+		));
+	});
+}
+
+#[test]
+fn killer_track_kills_referendum_and_slashes_both_deposits() {
+	new_test_ext().execute_with(|| {
+		let submitter = Sr25519Keyring::Alice.to_account_id();
+		let index = ongoing_referendum(&submitter);
+		let deposits = Balances::reserved_balance(&submitter);
+		assert!(deposits > 0);
+
+		assert_ok!(Referenda::kill(
+			RuntimeOrigin::from(pallet_custom_origins::Origin::ReferendumKiller),
+			index,
+		));
+
+		assert!(matches!(
+			ReferendumInfoFor::<Runtime>::get(index),
+			Some(ReferendumInfo::Killed(_)),
+		));
+		assert_eq!(Balances::free_balance(&submitter), FUNDS - deposits);
+	});
+}
+
+/// Cancel returns the deposits and kill takes them, so neither origin stands
+/// in for the other.
+#[test]
+fn neither_brake_track_stands_in_for_the_other() {
+	new_test_ext().execute_with(|| {
+		let submitter = Sr25519Keyring::Alice.to_account_id();
+		let index = ongoing_referendum(&submitter);
+
+		assert_noop!(
+			Referenda::cancel(
+				RuntimeOrigin::from(pallet_custom_origins::Origin::ReferendumKiller),
+				index,
+			),
+			DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			Referenda::kill(
+				RuntimeOrigin::from(pallet_custom_origins::Origin::ReferendumCanceller),
+				index,
+			),
+			DispatchError::BadOrigin,
+		);
+
+		assert_ongoing(index);
 	});
 }

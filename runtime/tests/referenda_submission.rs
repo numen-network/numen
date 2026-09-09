@@ -1,7 +1,8 @@
 //! Referendum submission gate. Only accounts backed by a qualified identity
-//! may open referenda. Qualified means judged Reasonable or KnownGood while
-//! carrying at least one social channel among x, telegram and discord, and a
-//! sub account qualifies through its parent.
+//! may open referenda, and the upgrade track only prime. Qualified means
+//! judged Reasonable or KnownGood while carrying at least one social channel
+//! among x, telegram and discord, and a sub account qualifies through its
+//! parent.
 
 mod common;
 
@@ -45,10 +46,15 @@ fn identity_info(x: Text<32>) -> IdInfo {
 	IdentityInfo { display: raw(b"proposer"), x, ..Default::default() }
 }
 
+fn install_prime() -> AccountId {
+	let key = funded(Sr25519Keyring::Ferdie);
+	pallet_prime::Key::<Runtime>::put(&key);
+	key
+}
+
 /// Installs Eve as registrar zero through the prime key.
 fn install_registrar() -> AccountId {
-	let prime = Sr25519Keyring::Ferdie.to_account_id();
-	pallet_prime::Key::<Runtime>::put(&prime);
+	let prime = install_prime();
 	let registrar = funded(Sr25519Keyring::Eve);
 	assert_ok!(Identity::add_registrar(
 		RuntimeOrigin::signed(prime),
@@ -73,14 +79,18 @@ fn judged_identity(who: &AccountId, judgement: Judgement<Balance>, info: IdInfo)
 	));
 }
 
-fn submit(who: &AccountId) -> DispatchResult {
+fn submit_to(who: &AccountId, track: pallet_custom_origins::Origin) -> DispatchResult {
 	let call = RuntimeCall::System(frame_system::Call::remark { remark: vec![] });
 	Referenda::submit(
 		RuntimeOrigin::signed(who.clone()),
-		Box::new(pallet_custom_origins::Origin::SmallSpender.into()),
+		Box::new(track.into()),
 		Bounded::Inline(call.encode().try_into().expect("remark fits the inline bound")),
 		DispatchTime::After(0),
 	)
+}
+
+fn submit(who: &AccountId) -> DispatchResult {
+	submit_to(who, pallet_custom_origins::Origin::SmallSpender)
 }
 
 fn referendum_count() -> u32 {
@@ -213,6 +223,40 @@ fn sub_of_unqualified_identity_cannot_submit() {
 		));
 
 		assert_noop!(submit(&sub), DispatchError::BadOrigin);
+		assert_eq!(referendum_count(), 0);
+	});
+}
+
+#[test]
+fn prime_submits_on_the_upgrade_track() {
+	new_test_ext().execute_with(|| {
+		let key = install_prime();
+
+		assert_ok!(submit_to(&key, pallet_custom_origins::Origin::RuntimeUpgrade));
+		assert_eq!(referendum_count(), 1);
+	});
+}
+
+#[test]
+fn qualified_identity_cannot_submit_on_the_upgrade_track() {
+	new_test_ext().execute_with(|| {
+		let who = funded(Sr25519Keyring::Alice);
+		judged_identity(&who, Judgement::Reasonable, identity_info(raw(b"@proposer")));
+
+		assert_noop!(
+			submit_to(&who, pallet_custom_origins::Origin::RuntimeUpgrade),
+			DispatchError::BadOrigin,
+		);
+		assert_eq!(referendum_count(), 0);
+	});
+}
+
+#[test]
+fn prime_without_a_qualified_identity_cannot_submit_elsewhere() {
+	new_test_ext().execute_with(|| {
+		let key = install_prime();
+
+		assert_noop!(submit(&key), DispatchError::BadOrigin);
 		assert_eq!(referendum_count(), 0);
 	});
 }

@@ -4,7 +4,7 @@
 
 use super::*;
 use frame_benchmarking::v2::*;
-use frame_support::traits::Get;
+use frame_support::traits::{EnsureOrigin, Get};
 use frame_system::RawOrigin;
 
 const SEED: u32 = 0;
@@ -21,11 +21,13 @@ mod benchmarks {
         let caller: T::AccountId = whitelisted_caller();
         whitelist_account!(caller);
         Key::<T>::put(&caller);
-        let origin = RawOrigin::Signed(caller);
+        let origin = T::UpgradeOrigin::try_successful_origin()
+            .map_err(|_| BenchmarkError::Stop("the upgrade origin can be built"))?;
 
         #[block]
         {
-            Pallet::<T>::ensure_prime(origin.into())?;
+            T::UpgradeOrigin::ensure_origin(origin)
+                .map_err(|_| BenchmarkError::Stop("the built origin clears its own check"))?;
         }
 
         Ok(())

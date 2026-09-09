@@ -76,7 +76,7 @@ fn upgrade_rejects_non_prime() {
 	new_test_ext().execute_with(|| {
 		assert_noop!(
 			Prime::upgrade(RuntimeOrigin::signed(OTHER), vec![1, 2, 3]),
-			Error::<Test>::RequirePrime,
+			DispatchError::BadOrigin,
 		);
 	});
 }
@@ -248,7 +248,7 @@ fn remove_registrar_rejects_non_prime() {
 
 		assert_noop!(
 			Prime::remove_registrar(RuntimeOrigin::signed(OTHER), index),
-			Error::<Test>::RequirePrime,
+			DispatchError::BadOrigin,
 		);
 	});
 }

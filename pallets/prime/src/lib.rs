@@ -1,8 +1,8 @@
 //! # Prime
 //!
-//! A downgraded sudo privilege that only allows runtime upgrades, retiring
-//! identity registrars, cancelling or killing referenda and rejecting
-//! treasury spends.
+//! A downgraded sudo privilege that only allows cancelling or killing
+//! referenda and rejecting treasury spends. It also carries the runtime
+//! upgrade and registrar retirement calls, whose origins the runtime picks.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -44,6 +44,12 @@ pub mod pallet {
 	{
 		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
+
+		/// Origin allowed to replace the runtime code.
+		type UpgradeOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+
+		/// Origin allowed to retire a registrar.
+		type RetireOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 	}
 
 	/// Account holding the prime privileges.
@@ -92,7 +98,7 @@ pub mod pallet {
 			DispatchClass::Operational,
 		))]
 		pub fn upgrade(origin: OriginFor<T>, code: Vec<u8>) -> DispatchResultWithPostInfo {
-			Self::ensure_prime(origin)?;
+			T::UpgradeOrigin::ensure_origin(origin)?;
 			frame_system::Pallet::<T>::set_code(frame_system::RawOrigin::Root.into(), code)
 		}
 
@@ -111,7 +117,7 @@ pub mod pallet {
 		#[pallet::call_index(2)]
 		#[pallet::weight(<T as Config>::WeightInfo::remove_registrar())]
 		pub fn remove_registrar(origin: OriginFor<T>, index: RegistrarIndex) -> DispatchResult {
-			Self::ensure_prime(origin)?;
+			T::RetireOrigin::ensure_origin(origin)?;
 
 			pallet_identity::Registrars::<T>::try_mutate(|registrars| -> DispatchResult {
 				let seat = registrars
@@ -141,11 +147,11 @@ pub mod pallet {
 pub struct EnsurePrime<T>(PhantomData<T>);
 
 impl<T: Config> EnsureOrigin<T::RuntimeOrigin> for EnsurePrime<T> {
-	type Success = ();
+	type Success = T::AccountId;
 
 	fn try_origin(o: T::RuntimeOrigin) -> Result<Self::Success, T::RuntimeOrigin> {
 		o.into().and_then(|raw| match raw {
-			RawOrigin::Signed(ref who) if Key::<T>::get().as_ref() == Some(who) => Ok(()),
+			RawOrigin::Signed(who) if Key::<T>::get().as_ref() == Some(&who) => Ok(who),
 			raw => Err(T::RuntimeOrigin::from(raw)),
 		})
 	}

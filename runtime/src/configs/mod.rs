@@ -7,8 +7,8 @@ use frame_support::{
 	traits::{
 		fungible::{Balanced, Credit, HoldConsideration},
 		tokens::{PayFromAccount, UnityAssetBalanceConversion},
-		ConstU128, ConstU32, ConstU64, ConstU8, EqualPrivilegeOnly, Get, Imbalance, InstanceFilter,
-		LinearStoragePrice, OnUnbalanced, VariantCountOf, WithdrawReasons,
+		ConstU128, ConstU32, ConstU64, ConstU8, EitherOfDiverse, EqualPrivilegeOnly, Get, Imbalance,
+		InstanceFilter, LinearStoragePrice, OnUnbalanced, VariantCountOf, WithdrawReasons,
 	},
 	weights::{
 		constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
@@ -319,6 +319,10 @@ impl pallet_transaction_payment::Config for Runtime {
 
 impl pallet_prime::Config for Runtime {
 	type WeightInfo = pallet_prime::weights::SubstrateWeight<Runtime>;
+	type UpgradeOrigin =
+		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::RuntimeUpgrade>;
+	type RetireOrigin =
+		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
 }
 
 parameter_types! {
@@ -885,14 +889,16 @@ impl pallet_identity::Config for Runtime {
 	type IdentityInformation = crate::identity_info::IdentityInfo;
 	type MaxRegistrars = ConstU32<1000>;
 	type Slashed = Treasury;
-	// Unreachable with no Root track and no sudo. Killing an identity only clears
+	// Root reaches this through its own track. Killing an identity only clears
 	// current state. The payload stays in the block that set it, so the power
 	// removes nothing while handing prime a way to slash someone's deposit.
 	type ForceOrigin = EnsureRoot<AccountId>;
-	type RegistrarOrigin = pallet_prime::EnsurePrime<Runtime>;
+	type RegistrarOrigin =
+		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
 	type OffchainSignature = Signature;
 	type SigningPublicKey = <Signature as Verify>::Signer;
-	type UsernameAuthorityOrigin = pallet_prime::EnsurePrime<Runtime>;
+	type UsernameAuthorityOrigin =
+		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
 	type PendingUsernameExpiration = ConstU32<{ 7 * DAYS }>;
 	type UsernameGracePeriod = ConstU32<{ 30 * DAYS }>;
 	type MaxSuffixLength = ConstU32<7>;
