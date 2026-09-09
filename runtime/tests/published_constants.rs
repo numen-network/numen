@@ -14,7 +14,7 @@ use frame_support::{
 	assert_ok,
 	traits::{
 		tokens::fungible::{InspectHold, Mutate},
-		EnsureOrigin,
+		EnsureOrigin, OriginTrait,
 	},
 };
 use numen_runtime::{
@@ -70,15 +70,17 @@ fn every_published_cap_is_what_its_spender_origin_releases() {
 	}
 }
 
-/// A track with no published cap leaves a caller guessing, and a cap with no
-/// track points at a referendum nobody can open. Adding one without the other
-/// is the drift this pairing exists to catch.
+/// A cap is published under a track id so a caller can size a proposal against
+/// the track it would run on. Renumbering a track without moving its cap
+/// points the figure at somebody else's referendum.
 #[test]
-fn published_caps_and_referendum_tracks_describe_the_same_set() {
-	let capped: Vec<u16> = spend_caps().into_iter().map(|(id, _, _)| id).collect();
-	let tracks: Vec<u16> = TracksInfo::tracks().map(|track| track.id).collect();
+fn every_published_cap_sits_on_the_track_its_origin_dispatches_under() {
+	for (id, origin, _) in spend_caps() {
+		let caller = RuntimeOrigin::from(origin).caller().clone();
 
-	assert_eq!(capped, tracks);
+		assert_eq!(TracksInfo::track_for(&caller), Ok(id));
+		assert!(TracksInfo::info(id).is_some(), "track {id}");
+	}
 }
 
 /// A wallet quotes the hold on a referendum text before anyone signs for it.

@@ -1,8 +1,10 @@
 //! OpenGov wiring. Tiered spender origins approve treasury backed bounties up
-//! to each tier cap, and a higher tier clears what a lower tier cannot.
+//! to each tier cap, and a higher tier clears what a lower tier cannot. Root
+//! calls and runtime code reach the ballot on tracks of their own.
 
 mod common;
 
+use codec::Encode;
 use common::new_test_ext;
 use frame_support::{
 	assert_noop, assert_ok,
@@ -15,11 +17,14 @@ use pallet_conviction_voting::{AccountVote, Conviction, Vote};
 use pallet_referenda::{ReferendumInfo, ReferendumInfoFor};
 use numen_runtime::{
 	configs::governance::{pallet_custom_origins, TracksInfo},
-	AccountId, Balance, Balances, BlockNumber, Bounties, ConvictionVoting, Preimage, Referenda,
-	Runtime, RuntimeCall, RuntimeOrigin, Scheduler, System, UNIT,
+	AccountId, Balance, Balances, BlockNumber, Bounties, ConvictionVoting, Preimage, Prime,
+	Referenda, Runtime, RuntimeCall, RuntimeOrigin, Scheduler, System, UNIT, VERSION,
 };
+use sp_core::traits::{Externalities, ReadRuntimeVersion, ReadRuntimeVersionExt};
+use sp_io::TestExternalities;
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::DispatchError;
+use sp_version::RuntimeVersion;
 
 /// Small tier funding cap. A referendum on the small track releases at most this.
 const SMALL_CAP: Balance = pallet_custom_origins::SMALL_SPENDER_CAP;
@@ -130,10 +135,27 @@ fn signed_origin_cannot_approve_bounty() {
 	});
 }
 
+#[test]
+fn identity_admin_dispatches_on_its_own_track() {
+	let admin = RuntimeOrigin::from(pallet_custom_origins::Origin::IdentityAdmin);
+	let id = <TracksInfo as pallet_referenda::TracksInfo<Balance, BlockNumber>>::track_for(
+		admin.caller(),
+	)
+	.expect("the identity admin origin has a track");
+
+	assert_eq!(id, 10);
+	assert!(<TracksInfo as pallet_referenda::TracksInfo<Balance, BlockNumber>>::info(id).is_some());
+}
+
 /// Small track prepare, confirm and enactment periods, read from the live track
 /// so the walk below follows whatever the runtime configures.
 fn small_track_periods() -> (BlockNumber, BlockNumber, BlockNumber) {
-	let info = <TracksInfo as pallet_referenda::TracksInfo<Balance, BlockNumber>>::info(0)
+	let small = RuntimeOrigin::from(pallet_custom_origins::Origin::SmallSpender);
+	let id = <TracksInfo as pallet_referenda::TracksInfo<Balance, BlockNumber>>::track_for(
+		small.caller(),
+	)
+	.expect("the small spender origin has a track");
+	let info = <TracksInfo as pallet_referenda::TracksInfo<Balance, BlockNumber>>::info(id)
 		.expect("small track exists");
 	(info.prepare_period, info.confirm_period, info.min_enactment_period)
 }
@@ -151,12 +173,11 @@ fn run_to_block(n: BlockNumber) {
 /// Submit a small track referendum carrying `call`, place its decision deposit
 /// and back it with a supermajority, returning its index. The tally clears both
 /// small track bars at the first deciding block.
-fn backed_small_track_referendum(voter: &AccountId, call: RuntimeCall) -> u32 {
-	Balances::set_balance(voter, VOTER_FUNDS);
-	// Submission is gated on a qualified identity, which has its own coverage,
-	// so place a judged one carrying a plaintext channel straight into storage.
+/// Submission is gated on a qualified identity, which has its own coverage, so
+/// place a judged one carrying a plaintext channel straight into storage.
+fn qualify(who: &AccountId) {
 	pallet_identity::IdentityOf::<Runtime>::insert(
-		voter,
+		who,
 		pallet_identity::Registration {
 			judgements: vec![(0, pallet_identity::Judgement::Reasonable)]
 				.try_into()
@@ -168,6 +189,11 @@ fn backed_small_track_referendum(voter: &AccountId, call: RuntimeCall) -> u32 {
 			},
 		},
 	);
+}
+
+fn backed_small_track_referendum(voter: &AccountId, call: RuntimeCall) -> u32 {
+	Balances::set_balance(voter, VOTER_FUNDS);
+	qualify(voter);
 	let index = pallet_referenda::ReferendumCount::<Runtime>::get();
 	let proposal = <Preimage as StorePreimage>::bound(call).expect("the call bounds inline");
 	let track = RuntimeOrigin::from(pallet_custom_origins::Origin::SmallSpender);
@@ -223,5 +249,92 @@ fn spend_referendum_runs_from_submission_through_confirm_to_dispatch() {
 		// minted, and only that origin can flip the bounty it targets.
 		run_to_block(enacted_at + 1);
 		assert_queued_for_funding(bounty);
+	});
+}
+
+/// Root dispatches the calls a chain most needs to put to its holders, so it
+/// carries a track of its own.
+#[test]
+fn a_root_call_reaches_the_ballot() {
+	new_test_ext().execute_with(|| {
+		let submitter = Sr25519Keyring::Bob.to_account_id();
+		Balances::set_balance(&submitter, VOTER_FUNDS);
+		qualify(&submitter);
+		let index = pallet_referenda::ReferendumCount::<Runtime>::get();
+		let proposal = <Preimage as StorePreimage>::bound(RuntimeCall::System(
+			frame_system::Call::remark { remark: b"root".to_vec() },
+		))
+		.expect("a remark call bounds inline");
+
+		assert_ok!(Referenda::submit(
+			RuntimeOrigin::signed(submitter),
+			Box::new(RuntimeOrigin::root().caller().clone()),
+			proposal,
+			DispatchTime::After(1),
+		));
+
+		assert!(matches!(
+			ReferendumInfoFor::<Runtime>::get(index),
+			Some(ReferendumInfo::Ongoing(_)),
+		));
+	});
+}
+
+/// Version probe stub fed to the externalities in place of a wasm executor.
+struct VersionStub(Vec<u8>);
+
+impl ReadRuntimeVersion for VersionStub {
+	fn read_runtime_version(
+		&self,
+		_wasm_code: &[u8],
+		_ext: &mut dyn Externalities,
+	) -> Result<Vec<u8>, String> {
+		Ok(self.0.clone())
+	}
+}
+
+/// Externalities whose version probe reports a runtime one spec version ahead,
+/// which is what `set_code` demands.
+fn ext_accepting_an_upgrade() -> TestExternalities {
+	let next = RuntimeVersion { spec_version: VERSION.spec_version + 1, ..VERSION };
+	let mut ext = new_test_ext();
+	ext.register_extension(ReadRuntimeVersionExt::new(VersionStub(next.encode())));
+	ext
+}
+
+/// The upgrade track is only worth having while the origin it mints is one
+/// that `upgrade` accepts.
+#[test]
+fn the_upgrade_track_replaces_runtime_code() {
+	ext_accepting_an_upgrade().execute_with(|| {
+		let track = RuntimeOrigin::from(pallet_custom_origins::Origin::RuntimeUpgrade);
+
+		assert_ok!(Prime::upgrade(track, b"a new runtime".to_vec()));
+
+		System::assert_has_event(frame_system::Event::CodeUpdated.into());
+	});
+}
+
+/// Every other track mints an origin of its own, and none of them reaches the
+/// runtime code.
+#[test]
+fn no_other_track_replaces_runtime_code() {
+	let others = [
+		pallet_custom_origins::Origin::WishForChange,
+		pallet_custom_origins::Origin::IdentityAdmin,
+		pallet_custom_origins::Origin::ReferendumCanceller,
+		pallet_custom_origins::Origin::ReferendumKiller,
+		pallet_custom_origins::Origin::SmallSpender,
+		pallet_custom_origins::Origin::MediumSpender,
+		pallet_custom_origins::Origin::BigSpender,
+	];
+
+	ext_accepting_an_upgrade().execute_with(|| {
+		for origin in others {
+			assert_noop!(
+				Prime::upgrade(RuntimeOrigin::from(origin), b"a new runtime".to_vec()),
+				DispatchError::BadOrigin,
+			);
+		}
 	});
 }

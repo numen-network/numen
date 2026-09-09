@@ -90,6 +90,8 @@ impl pallet_identity::Config for Test {
 
 impl pallet_prime::Config for Test {
 	type WeightInfo = ();
+	type UpgradeOrigin = pallet_prime::EnsurePrime<Test>;
+	type RetireOrigin = pallet_prime::EnsurePrime<Test>;
 }
 
 /// The identity pallet needs a signer a benchmark can drive for username

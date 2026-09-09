@@ -1,6 +1,6 @@
-//! Identity wiring. Registrar and username entry points answer only to the
-//! prime key, deposits are priced per encoded byte, and nobody can force an
-//! identity off the chain.
+//! Identity wiring. Registrars and username authorities answer to the prime
+//! key and the identity admin track, only root can force an identity off the
+//! chain, and deposits are priced per encoded byte.
 
 mod common;
 
@@ -8,9 +8,9 @@ use codec::Encode;
 use common::new_test_ext;
 use frame_support::{assert_noop, assert_ok, traits::tokens::fungible::Mutate};
 use numen_runtime::{
+	configs::governance::pallet_custom_origins,
 	identity_info::{IdentityField, IdentityInfo},
-	AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin,
-	UNIT,
+	AccountId, Balance, Balances, Identity, Prime, Runtime, RuntimeOrigin, UNIT,
 };
 use pallet_identity::IdentityInformationProvider;
 use sp_keyring::Sr25519Keyring;
@@ -63,6 +63,74 @@ fn add_registrar_accepts_prime_rejects_others() {
 
 		assert_ok!(Identity::add_registrar(RuntimeOrigin::signed(key), src(&stranger)));
 		assert_eq!(pallet_identity::Registrars::<Runtime>::get().len(), 1);
+	});
+}
+
+fn identity_admin() -> RuntimeOrigin {
+	RuntimeOrigin::from(pallet_custom_origins::Origin::IdentityAdmin)
+}
+
+#[test]
+fn identity_admin_track_seats_a_registrar() {
+	new_test_ext().execute_with(|| {
+		let stranger = Sr25519Keyring::Alice.to_account_id();
+
+		assert_ok!(Identity::add_registrar(identity_admin(), src(&stranger)));
+
+		assert_eq!(pallet_identity::Registrars::<Runtime>::get().len(), 1);
+	});
+}
+
+#[test]
+fn identity_admin_track_retires_a_registrar() {
+	new_test_ext().execute_with(|| {
+		let stranger = Sr25519Keyring::Alice.to_account_id();
+		assert_ok!(Identity::add_registrar(identity_admin(), src(&stranger)));
+
+		assert_ok!(Prime::remove_registrar(identity_admin(), 0));
+
+		assert!(pallet_identity::Registrars::<Runtime>::get()[0].is_none());
+	});
+}
+
+#[test]
+fn identity_admin_track_appoints_and_retires_a_username_authority() {
+	new_test_ext().execute_with(|| {
+		let authority = Sr25519Keyring::Alice.to_account_id();
+
+		assert_ok!(Identity::add_username_authority(
+			identity_admin(),
+			src(&authority),
+			b"numen".to_vec(),
+			10,
+		));
+		assert_eq!(pallet_identity::AuthorityOf::<Runtime>::iter().count(), 1);
+
+		assert_ok!(Identity::remove_username_authority(
+			identity_admin(),
+			b"numen".to_vec(),
+			src(&authority),
+		));
+		assert_eq!(pallet_identity::AuthorityOf::<Runtime>::iter().count(), 0);
+	});
+}
+
+/// The track hands out seats and stops there. Forcing an identity off the
+/// chain is root's.
+#[test]
+fn identity_admin_track_cannot_kill_identity() {
+	new_test_ext().execute_with(|| {
+		let who = Sr25519Keyring::Alice.to_account_id();
+		Balances::set_balance(&who, FUNDS);
+		assert_ok!(Identity::set_identity(
+			RuntimeOrigin::signed(who.clone()),
+			Box::new(identity_info()),
+		));
+
+		assert_noop!(
+			Identity::kill_identity(identity_admin(), src(&who)),
+			DispatchError::BadOrigin,
+		);
 	});
 }
 

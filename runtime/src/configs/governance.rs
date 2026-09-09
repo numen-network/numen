@@ -1,22 +1,32 @@
-//! OpenGov configuration. Token holders steer treasury spends and bounty
-//! approvals through tiered spender tracks, each capping the amount its
-//! referenda can release. Runtime level calls have no referendum track.
+//! OpenGov configuration. Token holders steer the chain through tracks, each
+//! naming the origin its referenda dispatch under and the bar they clear to
+//! get there. Spender tracks also cap the amount a referendum can release.
 
 use crate::{
 	AccountId, Balance, Balances, BlockNumber, Preimage, Referenda, Runtime, RuntimeCall,
-	RuntimeEvent, RuntimeOrigin, Scheduler, System, Treasury, DAYS, HOURS, UNIT,
+	RuntimeEvent, RuntimeOrigin, Scheduler, System, Treasury, DAYS, HOURS, MINUTES, UNIT,
 };
 use alloc::borrow::Cow;
 use frame_support::{
 	parameter_types,
-	traits::{AsEnsureOriginWithArg, ConstU32, Contains, EitherOf, EnsureOrigin},
+	traits::{
+		ConstU32, Contains, EitherOf, EitherOfDiverse, EnsureOrigin, EnsureOriginWithArg,
+		OriginTrait,
+	},
 };
 use frame_system::{EnsureSigned, RawOrigin};
 use pallet_identity::Judgement;
 use pallet_referenda::{Curve, Track, TrackInfo};
 use sp_runtime::{str_array as s, FixedI64};
 
-pub use pallet_custom_origins::{BigSpender, MediumSpender, SmallSpender};
+pub use pallet_custom_origins::{
+	BigSpender, IdentityAdminOrigin, MediumSpender, ReferendumCanceller, ReferendumKiller,
+	RuntimeUpgrade, SmallSpender,
+};
+
+/// The origin a referendum carries once it dispatches, which is also the key a
+/// track is found by.
+type PalletsOrigin = <RuntimeOrigin as OriginTrait>::PalletsOrigin;
 
 #[frame_support::pallet]
 pub mod pallet_custom_origins {
@@ -44,6 +54,16 @@ pub mod pallet_custom_origins {
 		MediumSpender,
 		/// Treasury spends and bounty approvals up to the big tier cap.
 		BigSpender,
+		/// Runtime code replacement.
+		RuntimeUpgrade,
+		/// A direction for the network to take, carrying no call of its own.
+		WishForChange,
+		/// Cancels a referendum, returning both of its deposits.
+		ReferendumCanceller,
+		/// Kills a referendum and slashes its decision deposit.
+		ReferendumKiller,
+		/// Appoints and retires identity registrars and username authorities.
+		IdentityAdmin,
 	}
 
 	macro_rules! decl_ensure {
@@ -97,14 +117,38 @@ pub mod pallet_custom_origins {
 		}
 	}
 
+	decl_ensure! {
+		pub type RuntimeUpgrade: EnsureOrigin<Success = ()> {
+			RuntimeUpgrade = (),
+		}
+	}
+
+	decl_ensure! {
+		pub type ReferendumCanceller: EnsureOrigin<Success = ()> {
+			ReferendumCanceller = (),
+		}
+	}
+
+	decl_ensure! {
+		pub type ReferendumKiller: EnsureOrigin<Success = ()> {
+			ReferendumKiller = (),
+		}
+	}
+
+	decl_ensure! {
+		pub type IdentityAdminOrigin: EnsureOrigin<Success = ()> {
+			IdentityAdmin = (),
+		}
+	}
+
 	#[pallet::extra_constants]
 	impl<T: Config> Pallet<T> {
 		#[pallet::constant_name(SpendCaps)]
 		fn spend_caps() -> alloc::vec::Vec<(u16, Origin, Balance)> {
 			alloc::vec![
-				(0, Origin::SmallSpender, SMALL_SPENDER_CAP),
-				(1, Origin::MediumSpender, MEDIUM_SPENDER_CAP),
-				(2, Origin::BigSpender, BIG_SPENDER_CAP),
+				(30, Origin::SmallSpender, SMALL_SPENDER_CAP),
+				(31, Origin::MediumSpender, MEDIUM_SPENDER_CAP),
+				(32, Origin::BigSpender, BIG_SPENDER_CAP),
 			]
 		}
 
@@ -128,18 +172,143 @@ const fn per_mille(x: i32) -> FixedI64 {
 	FixedI64::from_rational(x as u128, 1000)
 }
 
-// Approval falls to a bare majority, taking longer the more a track can spend.
-// Every track takes the same support curve.
-const APP_SMALL_SPENDER: Curve = Curve::make_linear(7, 28, percent(50), percent(100));
-const SUP_SMALL_SPENDER: Curve = Curve::make_reciprocal(12, 28, per_mille(5), per_mille(0), percent(50));
-const APP_MEDIUM_SPENDER: Curve = Curve::make_linear(14, 28, percent(50), percent(100));
-const SUP_MEDIUM_SPENDER: Curve = Curve::make_reciprocal(12, 28, percent(1), per_mille(5), percent(50));
-const APP_BIG_SPENDER: Curve = Curve::make_linear(28, 28, percent(50), percent(100));
-const SUP_BIG_SPENDER: Curve = Curve::make_reciprocal(12, 28, percent(2), per_mille(10), percent(50));
+const fn per_myriad(x: i32) -> FixedI64 {
+	FixedI64::from_rational(x as u128, 10000)
+}
 
-const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
+// Approval opens at unanimity and eases to a bare majority. Support unwinds
+// from half the supply across the decision period.
+const APP_ROOT: Curve = Curve::make_reciprocal(4, 28, percent(80), percent(50), percent(100));
+const SUP_ROOT: Curve = Curve::make_linear(28, 28, percent(0), percent(50));
+const APP_WISH_FOR_CHANGE: Curve =
+	Curve::make_reciprocal(4, 28, percent(80), percent(50), percent(100));
+const SUP_WISH_FOR_CHANGE: Curve = Curve::make_linear(28, 28, percent(0), percent(50));
+
+// Only prime opens an upgrade referendum, so support is there to let the rest
+// of the chain object rather than to prove a quorum. It falls to 1% in a day.
+const APP_RUNTIME_UPGRADE: Curve =
+	Curve::make_reciprocal(4, 28, percent(80), percent(50), percent(100));
+const SUP_RUNTIME_UPGRADE: Curve =
+	Curve::make_reciprocal(1, 28, percent(1), percent(0), percent(50));
+
+// Neither seat this track hands out is urgent, so support opens at half the
+// supply and takes twelve days to reach 2%. It bottoms out at nothing,
+// leaving the confirm period to set the bar.
+const APP_IDENTITY_ADMIN: Curve =
+	Curve::make_reciprocal(4, 28, percent(80), percent(50), percent(100));
+const SUP_IDENTITY_ADMIN: Curve =
+	Curve::make_reciprocal(12, 28, percent(2), percent(0), percent(50));
+
+// Cancelling has to land before its target does, so it decides in seven days
+// where every other track takes 28. Killing slashes the decision deposit, so
+// it spends all 28. Support borrows the big spender shape and falls to
+// nothing, leaving the confirm period to set the bar.
+const APP_REFERENDUM_CANCELLER: Curve = Curve::make_linear(28, 28, percent(50), percent(100));
+const SUP_REFERENDUM_CANCELLER: Curve =
+	Curve::make_reciprocal(12, 28, percent(2), percent(0), percent(50));
+const APP_REFERENDUM_KILLER: Curve = Curve::make_linear(28, 28, percent(50), percent(100));
+const SUP_REFERENDUM_KILLER: Curve =
+	Curve::make_reciprocal(12, 28, percent(2), percent(0), percent(50));
+
+// Approval falls to a bare majority, taking longer the more a track can spend,
+// and the support floor rises with the tier.
+const APP_SMALL_SPENDER: Curve = Curve::make_linear(7, 28, percent(50), percent(100));
+const SUP_SMALL_SPENDER: Curve =
+	Curve::make_reciprocal(12, 28, percent(1), per_mille(5), percent(50));
+const APP_MEDIUM_SPENDER: Curve = Curve::make_linear(14, 28, percent(50), percent(100));
+const SUP_MEDIUM_SPENDER: Curve =
+	Curve::make_reciprocal(12, 28, per_mille(15), per_myriad(75), percent(50));
+const APP_BIG_SPENDER: Curve = Curve::make_linear(28, 28, percent(50), percent(100));
+const SUP_BIG_SPENDER: Curve =
+	Curve::make_reciprocal(12, 28, percent(2), percent(1), percent(50));
+
+const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 9] = [
 	Track {
 		id: 0,
+		info: TrackInfo {
+			name: s("root"),
+			max_deciding: 1,
+			decision_deposit: 100_000 * UNIT,
+			prepare_period: DAYS,
+			decision_period: 28 * DAYS,
+			confirm_period: DAYS,
+			min_enactment_period: DAYS,
+			min_approval: APP_ROOT,
+			min_support: SUP_ROOT,
+		},
+	},
+	Track {
+		id: 1,
+		info: TrackInfo {
+			name: s("runtime_upgrade"),
+			max_deciding: 1,
+			decision_deposit: 100 * UNIT,
+			prepare_period: 10 * MINUTES,
+			decision_period: 28 * DAYS,
+			confirm_period: 10 * MINUTES,
+			min_enactment_period: 10 * MINUTES,
+			min_approval: APP_RUNTIME_UPGRADE,
+			min_support: SUP_RUNTIME_UPGRADE,
+		},
+	},
+	Track {
+		id: 2,
+		info: TrackInfo {
+			name: s("wish_for_change"),
+			max_deciding: 10,
+			decision_deposit: 1_000 * UNIT,
+			prepare_period: 2 * HOURS,
+			decision_period: 28 * DAYS,
+			confirm_period: DAYS,
+			min_enactment_period: 10 * MINUTES,
+			min_approval: APP_WISH_FOR_CHANGE,
+			min_support: SUP_WISH_FOR_CHANGE,
+		},
+	},
+	Track {
+		id: 10,
+		info: TrackInfo {
+			name: s("identity_admin"),
+			max_deciding: 10,
+			decision_deposit: 1_000 * UNIT,
+			prepare_period: 2 * HOURS,
+			decision_period: 28 * DAYS,
+			confirm_period: DAYS,
+			min_enactment_period: 10 * MINUTES,
+			min_approval: APP_IDENTITY_ADMIN,
+			min_support: SUP_IDENTITY_ADMIN,
+		},
+	},
+	Track {
+		id: 20,
+		info: TrackInfo {
+			name: s("referendum_canceller"),
+			max_deciding: 1_000,
+			decision_deposit: 1_000 * UNIT,
+			prepare_period: 2 * HOURS,
+			decision_period: 7 * DAYS,
+			confirm_period: DAYS,
+			min_enactment_period: 10 * MINUTES,
+			min_approval: APP_REFERENDUM_CANCELLER,
+			min_support: SUP_REFERENDUM_CANCELLER,
+		},
+	},
+	Track {
+		id: 21,
+		info: TrackInfo {
+			name: s("referendum_killer"),
+			max_deciding: 1_000,
+			decision_deposit: 10_000 * UNIT,
+			prepare_period: 2 * HOURS,
+			decision_period: 28 * DAYS,
+			confirm_period: DAYS,
+			min_enactment_period: 10 * MINUTES,
+			min_approval: APP_REFERENDUM_KILLER,
+			min_support: SUP_REFERENDUM_KILLER,
+		},
+	},
+	Track {
+		id: 30,
 		info: TrackInfo {
 			name: s("small_spender"),
 			max_deciding: 100,
@@ -153,11 +322,11 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 		},
 	},
 	Track {
-		id: 1,
+		id: 31,
 		info: TrackInfo {
 			name: s("medium_spender"),
 			max_deciding: 20,
-			decision_deposit: 1_000 * UNIT,
+			decision_deposit: 200 * UNIT,
 			prepare_period: 4 * HOURS,
 			decision_period: 28 * DAYS,
 			confirm_period: 3 * DAYS,
@@ -167,11 +336,11 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 		},
 	},
 	Track {
-		id: 2,
+		id: 32,
 		info: TrackInfo {
 			name: s("big_spender"),
 			max_deciding: 2,
-			decision_deposit: 10_000 * UNIT,
+			decision_deposit: 1_000 * UNIT,
 			prepare_period: 4 * HOURS,
 			decision_period: 28 * DAYS,
 			confirm_period: 7 * DAYS,
@@ -185,21 +354,27 @@ const TRACKS_DATA: [Track<u16, Balance, BlockNumber>; 3] = [
 pub struct TracksInfo;
 impl pallet_referenda::TracksInfo<Balance, BlockNumber> for TracksInfo {
 	type Id = u16;
-	type RuntimeOrigin = <RuntimeOrigin as frame_support::traits::OriginTrait>::PalletsOrigin;
+	type RuntimeOrigin = PalletsOrigin;
 
 	fn tracks() -> impl Iterator<Item = Cow<'static, Track<Self::Id, Balance, BlockNumber>>> {
 		TRACKS_DATA.iter().map(Cow::Borrowed)
 	}
 
 	fn track_for(id: &Self::RuntimeOrigin) -> Result<Self::Id, ()> {
-		if let Ok(custom) = pallet_custom_origins::Origin::try_from(id.clone()) {
-			match custom {
-				pallet_custom_origins::Origin::SmallSpender => Ok(0),
-				pallet_custom_origins::Origin::MediumSpender => Ok(1),
-				pallet_custom_origins::Origin::BigSpender => Ok(2),
-			}
-		} else {
-			Err(())
+		use pallet_custom_origins::Origin;
+
+		if let Ok(RawOrigin::Root) = RawOrigin::try_from(id.clone()) {
+			return Ok(0);
+		}
+		match Origin::try_from(id.clone()).map_err(|_| ())? {
+			Origin::RuntimeUpgrade => Ok(1),
+			Origin::WishForChange => Ok(2),
+			Origin::IdentityAdmin => Ok(10),
+			Origin::ReferendumCanceller => Ok(20),
+			Origin::ReferendumKiller => Ok(21),
+			Origin::SmallSpender => Ok(30),
+			Origin::MediumSpender => Ok(31),
+			Origin::BigSpender => Ok(32),
 		}
 	}
 }
@@ -267,7 +442,7 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureQualifiedIdentity {
 	type Success = AccountId;
 
 	fn try_origin(o: RuntimeOrigin) -> Result<Self::Success, RuntimeOrigin> {
-		let who = EnsureSigned::<AccountId>::try_origin(o)?;
+		let who = <EnsureSigned<AccountId> as EnsureOrigin<_>>::try_origin(o)?;
 		if QualifiedIdentity::contains(&who) {
 			Ok(who)
 		} else {
@@ -303,15 +478,42 @@ pub fn qualify_identity(who: &AccountId) {
 	pallet_identity::IdentityOf::<Runtime>::insert(who, registration);
 }
 
+/// Referendum submission is open to any account passing [`QualifiedIdentity`].
+/// The upgrade track is prime's alone, since the code on offer is its own.
+pub struct EnsureSubmitter;
+
+impl EnsureOriginWithArg<RuntimeOrigin, PalletsOrigin> for EnsureSubmitter {
+	type Success = AccountId;
+
+	fn try_origin(o: RuntimeOrigin, track: &PalletsOrigin) -> Result<Self::Success, RuntimeOrigin> {
+		match pallet_custom_origins::Origin::try_from(track.clone()) {
+			Ok(pallet_custom_origins::Origin::RuntimeUpgrade) => {
+				pallet_prime::EnsurePrime::<Runtime>::try_origin(o)
+			},
+			_ => EnsureQualifiedIdentity::try_origin(o),
+		}
+	}
+
+	#[cfg(feature = "runtime-benchmarks")]
+	fn try_successful_origin(track: &PalletsOrigin) -> Result<RuntimeOrigin, ()> {
+		match pallet_custom_origins::Origin::try_from(track.clone()) {
+			Ok(pallet_custom_origins::Origin::RuntimeUpgrade) => {
+				pallet_prime::EnsurePrime::<Runtime>::try_successful_origin()
+			},
+			_ => EnsureQualifiedIdentity::try_successful_origin(),
+		}
+	}
+}
+
 impl pallet_referenda::Config for Runtime {
 	type WeightInfo = pallet_referenda::weights::SubstrateWeight<Runtime>;
 	type RuntimeCall = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
 	type Scheduler = Scheduler;
 	type Currency = Balances;
-	type SubmitOrigin = AsEnsureOriginWithArg<EnsureQualifiedIdentity>;
-	type CancelOrigin = pallet_prime::EnsurePrime<Runtime>;
-	type KillOrigin = pallet_prime::EnsurePrime<Runtime>;
+	type SubmitOrigin = EnsureSubmitter;
+	type CancelOrigin = EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, ReferendumCanceller>;
+	type KillOrigin = EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, ReferendumKiller>;
 	type Slash = Treasury;
 	type Votes = pallet_conviction_voting::VotesOf<Runtime>;
 	type Tally = pallet_conviction_voting::TallyOf<Runtime>;
