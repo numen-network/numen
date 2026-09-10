@@ -10,7 +10,7 @@ use frame_support::{assert_noop, assert_ok, traits::tokens::fungible::Mutate};
 use numen_runtime::{
 	configs::governance::pallet_custom_origins,
 	identity_info::{IdentityField, IdentityInfo},
-	AccountId, Balance, Balances, Identity, Prime, Runtime, RuntimeOrigin, UNIT,
+	AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin, UNIT,
 };
 use pallet_identity::IdentityInformationProvider;
 use sp_keyring::Sr25519Keyring;
@@ -87,7 +87,7 @@ fn identity_admin_track_retires_a_registrar() {
 		let stranger = Sr25519Keyring::Alice.to_account_id();
 		assert_ok!(Identity::add_registrar(identity_admin(), src(&stranger)));
 
-		assert_ok!(Prime::remove_registrar(identity_admin(), 0));
+		assert_ok!(Identity::remove_registrar(identity_admin(), 0));
 
 		assert!(pallet_identity::Registrars::<Runtime>::get()[0].is_none());
 	});
