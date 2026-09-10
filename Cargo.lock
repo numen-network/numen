@@ -7404,17 +7404,19 @@ dependencies = [
 
 [[package]]
 name = "pallet-identity"
-version = "46.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk?branch=stable2603#0d33e7e7ec95da328d8d4e5142b90c7ee5829ea1"
+version = "29.0.0"
 dependencies = [
  "enumflags2",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
+ "pallet-balances",
  "parity-scale-codec",
  "scale-info",
+ "sp-core",
  "sp-io",
+ "sp-keystore",
  "sp-runtime",
 ]
 
