@@ -2,7 +2,7 @@
 //!
 //! A downgraded sudo privilege that only allows cancelling or killing
 //! referenda and rejecting treasury spends. It also carries the runtime
-//! upgrade and registrar retirement calls, whose origins the runtime picks.
+//! upgrade call, whose origin the runtime picks.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -22,7 +22,6 @@ pub use weights::*;
 use core::marker::PhantomData;
 use frame_support::traits::EnsureOrigin;
 use frame_system::RawOrigin;
-use pallet_identity::RegistrarIndex;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -38,17 +37,12 @@ pub mod pallet {
 	pub struct Pallet<T>(_);
 
 	#[pallet::config]
-	pub trait Config:
-		frame_system::Config<RuntimeEvent: From<Event<Self>>> + pallet_identity::Config
-	{
+	pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
 		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
 
 		/// Origin allowed to replace the runtime code.
 		type UpgradeOrigin: EnsureOrigin<Self::RuntimeOrigin>;
-
-		/// Origin allowed to retire a registrar.
-		type RetireOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 	}
 
 	/// Account holding the prime privileges.
@@ -75,16 +69,12 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		/// The prime key moved to a new account.
 		KeyChanged { old: T::AccountId, new: T::AccountId },
-		/// A registrar lost the power to judge identities.
-		RegistrarRemoved { index: RegistrarIndex },
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
 		/// The caller is not the prime key.
 		RequirePrime,
-		/// No registrar holds this index.
-		NoRegistrar,
 	}
 
 	#[pallet::call]
@@ -92,7 +82,7 @@ pub mod pallet {
 		/// Replace the runtime code, forwarding to `System::set_code` as root.
 		#[pallet::call_index(0)]
 		#[pallet::weight((
-			<T as Config>::WeightInfo::upgrade()
+			T::WeightInfo::upgrade()
 				.saturating_add(<T as frame_system::Config>::SystemWeightInfo::set_code()),
 			DispatchClass::Operational,
 		))]
@@ -103,31 +93,11 @@ pub mod pallet {
 
 		/// Hand the prime key to a new account.
 		#[pallet::call_index(1)]
-		#[pallet::weight(<T as Config>::WeightInfo::set_key())]
+		#[pallet::weight(T::WeightInfo::set_key())]
 		pub fn set_key(origin: OriginFor<T>, new: T::AccountId) -> DispatchResult {
 			let old = Self::ensure_prime(origin)?;
 			Key::<T>::put(&new);
 			Self::deposit_event(Event::KeyChanged { old, new });
-			Ok(())
-		}
-
-		/// Retire a registrar. Judgements it already gave stay in place. The
-		/// index it held is never reused.
-		#[pallet::call_index(2)]
-		#[pallet::weight(<T as Config>::WeightInfo::remove_registrar())]
-		pub fn remove_registrar(origin: OriginFor<T>, index: RegistrarIndex) -> DispatchResult {
-			T::RetireOrigin::ensure_origin(origin)?;
-
-			pallet_identity::Registrars::<T>::try_mutate(|registrars| -> DispatchResult {
-				let seat = registrars
-					.get_mut(index as usize)
-					.ok_or(Error::<T>::NoRegistrar)?;
-				ensure!(seat.is_some(), Error::<T>::NoRegistrar);
-				*seat = None;
-				Ok(())
-			})?;
-
-			Self::deposit_event(Event::RegistrarRemoved { index });
 			Ok(())
 		}
 	}

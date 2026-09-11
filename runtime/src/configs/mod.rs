@@ -321,8 +321,6 @@ impl pallet_prime::Config for Runtime {
 	type WeightInfo = pallet_prime::weights::SubstrateWeight<Runtime>;
 	type UpgradeOrigin =
 		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::RuntimeUpgrade>;
-	type RetireOrigin =
-		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
 }
 
 parameter_types! {

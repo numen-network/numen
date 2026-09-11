@@ -18,6 +18,7 @@ members = [
     "pallets/validator",
     "precompiles/balances-erc20",
     "runtime",
+    "vendor/pallet-identity",
 ]
 resolver = "2"
 
@@ -91,6 +92,7 @@ sp-genesis-builder = { git = "https://github.com/paritytech/polkadot-sdk", branc
 sp-inherents = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 sp-io = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 sp-keyring = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
+sp-keystore = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 sp-runtime = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 sp-timestamp = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 substrate-frame-rpc-system = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
@@ -108,7 +110,7 @@ pallet-bounties = { git = "https://github.com/paritytech/polkadot-sdk", branch =
 pallet-child-bounties = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 pallet-conviction-voting = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 pallet-grandpa = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
-pallet-identity = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
+pallet-identity = { path = "./vendor/pallet-identity", default-features = false }
 pallet-im-online = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 pallet-multisig = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
 pallet-preimage = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2603", default-features = false }
