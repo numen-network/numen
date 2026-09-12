@@ -894,8 +894,7 @@ impl pallet_identity::Config for Runtime {
 		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
 	type OffchainSignature = Signature;
 	type SigningPublicKey = <Signature as Verify>::Signer;
-	type UsernameAuthorityOrigin =
-		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
+	type UsernameAuthorityOrigin = governance::IdentityAdminOrigin;
 	type PendingUsernameExpiration = ConstU32<{ 7 * DAYS }>;
 	type UsernameGracePeriod = ConstU32<{ 30 * DAYS }>;
 	type MaxSuffixLength = ConstU32<7>;

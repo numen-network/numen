@@ -1,6 +1,6 @@
-//! Identity wiring. Registrars and username authorities answer to the prime
-//! key and the identity admin track, only root can force an identity off the
-//! chain, and deposits are priced per encoded byte.
+//! Identity wiring. Registrars answer to the prime key and the identity admin
+//! track, username authorities to the track alone, only root can force an
+//! identity off the chain, and deposits are priced per encoded byte.
 
 mod common;
 
@@ -112,6 +112,44 @@ fn identity_admin_track_appoints_and_retires_a_username_authority() {
 			src(&authority),
 		));
 		assert_eq!(pallet_identity::AuthorityOf::<Runtime>::iter().count(), 0);
+	});
+}
+
+/// Naming an authority overwrites whoever holds the suffix, so the track keeps
+/// both calls to itself.
+#[test]
+fn prime_cannot_touch_username_authorities() {
+	new_test_ext().execute_with(|| {
+		let key = install_prime();
+		let authority = Sr25519Keyring::Alice.to_account_id();
+
+		assert_noop!(
+			Identity::add_username_authority(
+				RuntimeOrigin::signed(key.clone()),
+				src(&authority),
+				b"numen".to_vec(),
+				10,
+			),
+			DispatchError::BadOrigin,
+		);
+
+		assert_ok!(Identity::add_username_authority(
+			identity_admin(),
+			src(&authority),
+			b"numen".to_vec(),
+			10,
+		));
+
+		assert_noop!(
+			Identity::remove_username_authority(
+				RuntimeOrigin::signed(key),
+				b"numen".to_vec(),
+				src(&authority),
+			),
+			DispatchError::BadOrigin,
+		);
+
+		assert_eq!(pallet_identity::AuthorityOf::<Runtime>::iter().count(), 1);
 	});
 }
 
