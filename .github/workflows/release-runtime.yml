@@ -43,7 +43,7 @@ jobs:
     needs: check-version
     uses: ./.github/workflows/zombienet.yml
 
-  build&publish:
+  release:
     needs: [check-version, test, zombienet]
     runs-on: ubuntu-latest
     env:
