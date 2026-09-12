@@ -1,0 +1,108 @@
+name: Release runtime
+
+on:
+  push:
+    tags:
+      - 'runtime-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag matches spec_version
+        id: check
+        run: |
+          tag="${GITHUB_REF_NAME#runtime-v}"
+          version=$(grep -m1 -E '^[[:space:]]*spec_version:' runtime/src/lib.rs | sed -E 's/.*spec_version:[[:space:]]*([0-9]+).*/\1/')
+          echo "tag=$tag spec_version=$version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag '$tag' does not match runtime spec_version '$version'"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/free-disk-space
+      - uses: ./.github/actions/ubuntu-dependencies
+      - name: Run tests
+        run: SKIP_WASM_BUILD=1 cargo test --workspace --locked
+        timeout-minutes: 30
+
+  zombienet:
+    needs: check-version
+    uses: ./.github/workflows/zombienet.yml
+
+  build&publish:
+    needs: [check-version, test, zombienet]
+    runs-on: ubuntu-latest
+    env:
+      SRTOOL_TAG: '1.93.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/free-disk-space
+
+      - name: Build runtime
+        id: srtool
+        uses: paritytech/srtool-actions@v0.9.4
+        env:
+          BUILD_OPTS: '--features metadata-hash'
+        with:
+          chain: numen
+          package: numen-runtime
+          runtime_dir: runtime
+          tag: ${{ env.SRTOOL_TAG }}
+          profile: production
+        timeout-minutes: 90
+
+      - name: Stage release files
+        id: stage
+        run: |
+          want="${{ needs.check-version.outputs.version }}"
+          stem="numen_runtime-v$want"
+          echo '${{ steps.srtool.outputs.json }}' | jq . > "$stem.srtool-digest.json"
+          spec=$(jq -r '.runtimes.compressed.subwasm.core_version.specVersion' "$stem.srtool-digest.json")
+          if [ "$spec" != "$want" ]; then
+            echo "::error::Built runtime reports spec_version '$spec', tag says '$want'"
+            exit 1
+          fi
+          cp "${{ steps.srtool.outputs.wasm_compressed }}" "$stem.compact.compressed.wasm"
+          echo "stem=$stem" >> "$GITHUB_OUTPUT"
+
+      - name: Show runtime info
+        run: |
+          digest="${{ steps.stage.outputs.stem }}.srtool-digest.json"
+          {
+            echo '## Runtime'
+            echo
+            echo 'Details of the runtime in this release are below.'
+            echo "It was built with $(jq -r .gen "$digest") and $(jq -r .rustc "$digest")."
+            echo
+            echo 'Numen'
+            echo '```'
+            docker run --rm --entrypoint subwasm -v "$PWD:/build" "paritytech/srtool:$SRTOOL_TAG" \
+              info "/build/${{ steps.srtool.outputs.wasm_compressed }}"
+            echo '```'
+          } | tee runtime-info.md
+
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Runtime v${{ needs.check-version.outputs.version }}
+          draft: true
+          prerelease: true
+          generate_release_notes: true
+          body_path: runtime-info.md
+          files: |
+            ${{ steps.stage.outputs.stem }}.compact.compressed.wasm
+            ${{ steps.stage.outputs.stem }}.srtool-digest.json

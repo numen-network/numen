@@ -1,0 +1,64 @@
+name: Zombienet
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      scenarios: ${{ steps.list.outputs.scenarios }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/free-disk-space
+      - uses: ./.github/actions/ubuntu-dependencies
+      - name: Build node
+        run: bash zombienet/integration/scripts/build-node.sh
+        timeout-minutes: 60
+      - name: List scenarios
+        id: list
+        run: |
+          json=$(cd zombienet/integration && find scenarios -name '*.zndsl' | sort | jq -R . | jq -cs .)
+          echo "scenarios=$json" >> "$GITHUB_OUTPUT"
+      - name: Stage artifacts
+        run: |
+          mkdir -p stage
+          cp target/release/numen stage/
+          cp zombienet/integration/integration-raw.json stage/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zombienet-node
+          path: stage
+
+  scenario:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJSON(needs.build.outputs.scenarios) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: zombienet-node
+          path: stage
+      - name: Restore artifacts
+        run: |
+          mkdir -p target/release
+          cp stage/numen target/release/
+          chmod +x target/release/numen
+          cp stage/integration-raw.json zombienet/integration/
+      - name: Install zombienet
+        run: |
+          curl -L -o /usr/local/bin/zombienet \
+            https://github.com/paritytech/zombienet/releases/download/v1.3.138/zombienet-linux-x64
+          chmod +x /usr/local/bin/zombienet
+      - name: Install harness dependencies
+        working-directory: zombienet/integration
+        run: npm ci || npm install
+      - name: Run scenario
+        working-directory: zombienet/integration
+        run: zombienet -p native test ${{ matrix.scenario }}
+        timeout-minutes: 40
