@@ -3,7 +3,7 @@
 // Verifies, over ethers v6 + Frontier JSON-RPC, the whole EVM tooling surface
 // this runtime owns:
 //   1. config smoke + cross-node consistency: eth_chainId == 320262 and the
-//      initial baseFeePerGas == 1 gwei, identical when read from alice/bob/
+//      initial baseFeePerGas == 1000 gwei, identical when read from alice/bob/
 //      charlie (validates pallet-evm ChainId and pallet-base-fee defaults).
 //   2. minimal deploy path: deploy init code that returns a single STOP byte,
 //      then read the runtime code back and assert it equals 0x00.
@@ -11,8 +11,8 @@
 //      10 UNIT via balances.transferKeepAlive; Alith's EVM balance grows 10 UNIT.
 //   4. EVM -> SS58 (type-2): Alith calls withdraw(dest, 5 UNIT) on 0x0802 with
 //      an EIP-1559 type-2 transaction; receipt is type 2 and status 1.
-//   5. both bridges reconcile on both sides (exact where no fee is paid, with a
-//      gas/fee tolerance on the fee-paying side).
+//   5. both bridges reconcile exactly on both sides (fee from TransactionFeePaid
+//      on substrate, from gasUsed * gasPrice on EVM).
 //
 // Returns 1 on success, 0 on failure (zombienet `js-script ... return is 1`).
 //
@@ -33,11 +33,10 @@ const PRECOMPILE = "0x0000000000000000000000000000000000000802";
 const ABI = ["function withdraw(bytes32,uint256) returns (bool)"];
 
 const EXPECTED_CHAIN_ID = 320262n;
-const ONE_GWEI = 1_000_000_000n;
+const EXPECTED_BASE_FEE = 1_000_000_000_000n; // DefaultBaseFeePerGas, 1000 gwei.
 const UNIT = 10n ** 18n; // runtime UNIT == 1e18, EVM uses 18 decimals.
 const TOPUP = 10n * UNIT; // SS58 -> EVM amount.
 const WITHDRAW = 5n * UNIT; // EVM -> SS58 amount.
-const FEE_TOLERANCE = UNIT / 100n; // 0.01 UNIT slack for substrate tx fee.
 
 // Init bytecode that returns a 1-byte runtime: STOP (0x00).
 const INIT_CODE = "0x6001600c60003960016000f300";
@@ -77,8 +76,8 @@ async function run(_zombie, networkInfo, _args) {
                 console.error("📜", `  ${name} chainId ${id} != ${EXPECTED_CHAIN_ID}`);
                 return 0;
             }
-            if (fee !== ONE_GWEI) {
-                console.error("📜", `  ${name} baseFeePerGas ${fee} != ${ONE_GWEI}`);
+            if (fee !== EXPECTED_BASE_FEE) {
+                console.error("📜", `  ${name} baseFeePerGas ${fee} != ${EXPECTED_BASE_FEE}`);
                 return 0;
             }
             if (chainId === null) {
@@ -122,7 +121,7 @@ async function run(_zombie, networkInfo, _args) {
         const alithEvmBefore = await provider.getBalance(wallet.address);
         const senderSubBefore = (await api.query.system.account(sender.address)).data.free.toBigInt();
 
-        await submitExtrinsic(
+        const { events } = await submitExtrinsic(
             api, sender,
             api.tx.balances.transferKeepAlive(alithSubstrate, TOPUP.toString()),
         );
@@ -135,12 +134,19 @@ async function run(_zombie, networkInfo, _args) {
             console.error("📜", `  Alith EVM gain ${evmGain} != ${TOPUP}`);
             return 0;
         }
-        const senderSpent = senderSubBefore - senderSubAfter;
-        if (senderSpent < TOPUP || senderSpent > TOPUP + FEE_TOLERANCE) {
-            console.error("📜", `  Ferdie spent ${senderSpent} outside [${TOPUP}, ${TOPUP + FEE_TOLERANCE}]`);
+        const feePaid = events.find(({ event }) =>
+            api.events.transactionPayment.TransactionFeePaid.is(event));
+        if (!feePaid) {
+            console.error("📜", "  transfer emitted no TransactionFeePaid");
             return 0;
         }
-        console.log("📜", `  SS58->EVM ok: Alith +${evmGain}, Ferdie -${senderSpent} (fee ${senderSpent - TOPUP})`);
+        const txFee = feePaid.event.data.actualFee.toBigInt();
+        const senderSpent = senderSubBefore - senderSubAfter;
+        if (senderSpent !== TOPUP + txFee) {
+            console.error("📜", `  Ferdie spent ${senderSpent} != ${TOPUP} + fee ${txFee}`);
+            return 0;
+        }
+        console.log("📜", `  SS58->EVM ok: Alith +${evmGain}, Ferdie -${senderSpent} (fee ${txFee})`);
 
         // --- Step 4: EVM -> SS58 withdraw via 0x0802 (EIP-1559 type-2). ---
         const erc20 = new Contract(PRECOMPILE, ABI, wallet);
@@ -150,8 +156,6 @@ async function run(_zombie, networkInfo, _args) {
 
         const wTx = await erc20.withdraw(destBytes32, WITHDRAW, {
             type: 2,
-            maxFeePerGas: 2n * ONE_GWEI,
-            maxPriorityFeePerGas: ONE_GWEI,
             gasLimit: 200_000n,
         });
         const wReceipt = await wTx.wait();
