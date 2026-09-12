@@ -319,8 +319,7 @@ impl pallet_transaction_payment::Config for Runtime {
 
 impl pallet_prime::Config for Runtime {
 	type WeightInfo = pallet_prime::weights::SubstrateWeight<Runtime>;
-	type UpgradeOrigin =
-		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::RuntimeUpgrade>;
+	type UpgradeOrigin = governance::RuntimeUpgrade;
 }
 
 parameter_types! {
