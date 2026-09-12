@@ -319,8 +319,7 @@ impl pallet_transaction_payment::Config for Runtime {
 
 impl pallet_prime::Config for Runtime {
 	type WeightInfo = pallet_prime::weights::SubstrateWeight<Runtime>;
-	type UpgradeOrigin =
-		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::RuntimeUpgrade>;
+	type UpgradeOrigin = governance::RuntimeUpgrade;
 }
 
 parameter_types! {
@@ -895,8 +894,7 @@ impl pallet_identity::Config for Runtime {
 		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
 	type OffchainSignature = Signature;
 	type SigningPublicKey = <Signature as Verify>::Signer;
-	type UsernameAuthorityOrigin =
-		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
+	type UsernameAuthorityOrigin = governance::IdentityAdminOrigin;
 	type PendingUsernameExpiration = ConstU32<{ 7 * DAYS }>;
 	type UsernameGracePeriod = ConstU32<{ 30 * DAYS }>;
 	type MaxSuffixLength = ConstU32<7>;

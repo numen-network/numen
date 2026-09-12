@@ -338,3 +338,17 @@ fn no_other_track_replaces_runtime_code() {
 		}
 	});
 }
+
+/// The prime key holds the brakes, not the code.
+#[test]
+fn the_prime_key_cannot_replace_runtime_code() {
+	ext_accepting_an_upgrade().execute_with(|| {
+		let key = Sr25519Keyring::Ferdie.to_account_id();
+		pallet_prime::Key::<Runtime>::put(&key);
+
+		assert_noop!(
+			Prime::upgrade(RuntimeOrigin::signed(key), b"a new runtime".to_vec()),
+			DispatchError::BadOrigin,
+		);
+	});
+}
