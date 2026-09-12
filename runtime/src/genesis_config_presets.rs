@@ -17,6 +17,7 @@ const GENESIS_TREASURY_ISSUANCE: u128 = 550_000_000 * UNIT;
 const GENESIS_AIRDROP_ISSUANCE: u128 = 50_000_000 * UNIT;
 
 const INITIAL_DIFFICULTY: u32 = 1_000;
+const MAIN_INITIAL_DIFFICULTY: u32 = 1_000_000;
 
 const DEV_EVM_ACCOUNT_BALANCE: u128 = 1_000_000 * UNIT;
 const DEV_ACCOUNT_BALANCE: u128 = 1_000_000 * UNIT;
@@ -203,7 +204,7 @@ pub fn mainnet_config_genesis() -> Value {
 		live_validators(),
 		MAIN_EVM_CHAIN_ID,
 		BTreeMap::new(),
-		INITIAL_DIFFICULTY.into()
+		MAIN_INITIAL_DIFFICULTY.into()
 	)
 }
 
