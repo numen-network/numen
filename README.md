@@ -23,7 +23,7 @@ Disk usage grows as the chain does.
 
 ## Getting Started
 
-Grab a prebuilt binary from the [releases page](https://github.com/numen-network/numen/releases). Each archive holds the `numen` binary and `testnet-raw.json`. Nothing else to download.
+Grab a prebuilt binary from the [releases page](https://github.com/numen-network/numen/releases). Each archive holds the `numen` binary and `mainnet-raw.json`. Nothing else to download.
 
 ```bash
 tar -xzf numen-linux-x86_64.tar.gz
@@ -32,18 +32,56 @@ cd numen-linux-x86_64
 
 Builds ship for Linux x86_64 and macOS arm64. Build from source for anything else, or to track master. See [docs/how-to-build.md](docs/how-to-build.md).
 
+For the testnet, download [testnet-raw.json](https://github.com/numen-network/numen/raw/refs/heads/master/testnet-raw.json) and pass it to `--chain` instead of `mainnet`.
+
 ## Run a node
 
-Sync a node against the testnet.
+> Recommend opening port 30333 on your firewall to help strengthen the network.
+> Open UDP 123 both ways as well, or NTP never gets through. Drift past 2 seconds and the node rejects new blocks, stuck on its own fork.
+
+Run it the simplest way
 
 ```bash
-./numen --chain testnet-raw.json
+./numen --chain mainnet-raw.json
 ```
 
-Run an archive node to keep every historical state.
+Run an archive node to keep every historical state
 
 ```bash
-./numen --chain testnet-raw.json --state-pruning archive
+./numen --chain mainnet-raw.json --state-pruning archive
+```
+
+Run it as a service
+
+```ini
+[Unit]
+Description=Numen node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/opt/numen/numen \
+    --chain /opt/numen/mainnet-raw.json \
+    --in-peers 100 \
+    --out-peers 25 \
+    --in-peers-light 50
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload && systemctl enable --now numen
+```
+
+Logs land in the journal.
+
+```bash
+journalctl -u numen -f
 ```
 
 ## Mining
@@ -51,7 +89,7 @@ Run an archive node to keep every historical state.
 Mine locally and credit rewards to the given account.
 
 ```bash
-./numen --chain testnet-raw.json --miner <YOUR_ADDRESS> --node-miner <THREADS>
+./numen --chain mainnet-raw.json --miner <YOUR_ADDRESS> --node-miner <THREADS>
 ```
 
 `--miner` sets the reward address and exposes the mining RPC so external miners can scan off the node and submit seals.
