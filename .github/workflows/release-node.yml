@@ -73,7 +73,7 @@ jobs:
         run: |
           mkdir -p ${{ matrix.asset }}
           cp target/production/numen ${{ matrix.asset }}/
-          cp testnet-raw.json ${{ matrix.asset }}/
+          cp mainnet-raw.json ${{ matrix.asset }}/
           tar -czf ${{ matrix.asset }}.tar.gz ${{ matrix.asset }}
 
       - uses: actions/upload-artifact@v4
