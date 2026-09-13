@@ -90,7 +90,11 @@ pub const MILLI_UNIT: Balance = 1_000_000_000_000_000;
 pub const MICRO_UNIT: Balance = 1_000_000_000_000;
 
 /// Existential deposit.
-pub const EXISTENTIAL_DEPOSIT: Balance = MICRO_UNIT;
+///
+/// Zero keeps every account alive regardless of balance. Reaping an account
+/// resets its nonce, which would let a signed EVM transaction be replayed once
+/// the address is funded again.
+pub const EXISTENTIAL_DEPOSIT: Balance = 0;
 
 /// The version information used to identify this runtime when compiled natively.
 #[cfg(feature = "std")]

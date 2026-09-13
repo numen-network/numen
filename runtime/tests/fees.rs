@@ -7,7 +7,7 @@
 mod common;
 
 use codec::Encode;
-use common::new_test_ext;
+use common::{evm_account, new_test_ext};
 use frame_support::{
 	dispatch::DispatchClass,
 	weights::Weight,
@@ -26,7 +26,7 @@ use numen_runtime::{
 	},
 	AccountId, Balance, Balances, Runtime, System, TransactionPayment, UNIT,
 };
-use pallet_evm::{AddressMapping, FeeCalculator, Runner};
+use pallet_evm::{FeeCalculator, Runner};
 use pallet_transaction_payment::Multiplier;
 use sp_consensus_pow::POW_ENGINE_ID;
 use sp_core::{H160, U256};
@@ -49,10 +49,6 @@ fn miner() -> AccountId {
 /// Stamp the block digest with a PoW author, the way both miners do.
 fn set_pow_author(author: &AccountId) {
 	System::deposit_log(DigestItem::PreRuntime(POW_ENGINE_ID, author.encode()));
-}
-
-fn evm_account(addr: H160) -> AccountId {
-	<Runtime as pallet_evm::Config>::AddressMapping::into_account_id(addr)
 }
 
 /// Withdraw `fee` from the payer exactly like `FungibleAdapter` does before it

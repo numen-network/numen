@@ -6,10 +6,10 @@
 
 mod common;
 
-use common::new_test_ext;
+use common::{balances_erc20, encode_transfer, evm_account, new_test_ext};
 use fp_evm::MAX_TRANSACTION_GAS_LIMIT;
 use frame_support::traits::tokens::fungible::Mutate;
-use pallet_evm::{AddressMapping, Runner};
+use pallet_evm::Runner;
 use numen_runtime::{
 	configs::TreasuryAccount, AccountId, Balances, Runtime, EXISTENTIAL_DEPOSIT, UNIT,
 };
@@ -20,13 +20,10 @@ const MAX_FEE_PER_GAS: u64 = 2_000_000_000_000;
 const GAS_LIMIT: u64 = 1_000_000;
 
 /// Smallest balance an EVM caller can hold and still transact. `pallet-evm`
-/// reads spendable balance under `Preservation::Preserve`, so the caller funds
-/// the whole gas prepay on top of an untouchable existential deposit.
+/// reads spendable balance under `Preservation::Preserve`, so the existential
+/// deposit does not count toward the gas prepay.
 const MIN_CALLER_BALANCE: u128 =
 	GAS_LIMIT as u128 * MAX_FEE_PER_GAS as u128 + EXISTENTIAL_DEPOSIT;
-
-/// The chain-specific `balances-erc20` precompile.
-const ERC20_PRECOMPILE: u64 = 0x0802;
 
 /// Init bytecode that returns a one byte runtime of `STOP` (0x00).
 ///
@@ -40,10 +37,6 @@ const ERC20_PRECOMPILE: u64 = 0x0802;
 ///   00     STOP         runtime code byte 12
 const MINIMAL_INIT_CODE: [u8; 13] =
 	[0x60, 0x01, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x01, 0x60, 0x00, 0xf3, 0x00];
-
-fn evm_account(addr: H160) -> AccountId {
-	<Runtime as pallet_evm::Config>::AddressMapping::into_account_id(addr)
-}
 
 fn create_minimal_contract(
 	caller: H160,
@@ -73,7 +66,7 @@ fn create_minimal_contract(
 fn call_erc20_precompile(caller: H160, data: Vec<u8>) -> Vec<u8> {
 	let res = <Runtime as pallet_evm::Config>::Runner::call(
 		caller,
-		H160::from_low_u64_be(ERC20_PRECOMPILE),
+		balances_erc20(),
 		data,
 		U256::zero(),
 		GAS_LIMIT,
@@ -99,15 +92,6 @@ fn encode_balance_of(who: H160) -> Vec<u8> {
 	let mut data = vec![0x70, 0xa0, 0x82, 0x31];
 	data.extend_from_slice(&[0u8; 12]);
 	data.extend_from_slice(who.as_bytes());
-	data
-}
-
-/// `transfer(address,uint256)`.
-fn encode_transfer(to: H160, amount: u128) -> Vec<u8> {
-	let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
-	data.extend_from_slice(&[0u8; 12]);
-	data.extend_from_slice(to.as_bytes());
-	data.extend_from_slice(&U256::from(amount).to_big_endian());
 	data
 }
 

@@ -25,7 +25,7 @@ frame-system.workspace = true
 frame-try-runtime = { optional = true, workspace = true }
 hex-literal.workspace = true
 pallet-authorship.workspace = true
-pallet-balances.workspace = true
+pallet-balances = { features = ["insecure_zero_ed"], workspace = true }
 pallet-bounties.workspace = true
 pallet-child-bounties.workspace = true
 pallet-conviction-voting.workspace = true
