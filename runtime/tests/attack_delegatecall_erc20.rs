@@ -9,20 +9,14 @@
 
 mod common;
 
-use common::new_test_ext;
+use common::{balances_erc20, encode_transfer, evm_account, new_test_ext};
 use frame_support::traits::tokens::fungible::Mutate;
-use numen_runtime::{AccountId, Balances, Runtime, UNIT};
-use pallet_evm::{AddressMapping, Runner};
+use numen_runtime::{Balances, Runtime, UNIT};
+use pallet_evm::Runner;
 use sp_core::{H160, U256};
 
 const MAX_FEE_PER_GAS: u64 = 2_000_000_000_000;
 const GAS_LIMIT: u64 = 1_000_000;
-const ERC20_PRECOMPILE: u64 = 0x0802;
-
-fn evm_account(addr: H160) -> AccountId {
-    <Runtime as pallet_evm::Config>::AddressMapping::into_account_id(addr)
-}
-
 // Runtime bytecode that forwards its calldata verbatim into `0x802` via
 // DELEGATECALL, so the precompile sees the *outer* caller as `msg.sender`, then
 // returns the inner output so the test can read the revert reason.
@@ -72,15 +66,6 @@ const CALL_FORWARDER_INIT: [u8; 43] = [
     // RETURN(off=0, len=RETURNDATASIZE)
     0x3d, 0x60, 0x00, 0xf3,
 ];
-
-/// `transfer(address,uint256)`.
-fn encode_transfer(to: H160, amount: u128) -> Vec<u8> {
-    let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
-    data.extend_from_slice(&[0u8; 12]);
-    data.extend_from_slice(to.as_bytes());
-    data.extend_from_slice(&U256::from(amount).to_big_endian());
-    data
-}
 
 fn deploy_forwarder(deployer: H160, init_code: &[u8]) -> H160 {
     let info = <Runtime as pallet_evm::Config>::Runner::create(
@@ -187,7 +172,7 @@ fn direct_call_to_erc20_precompile_debits_the_real_caller() {
         assert_eq!(Balances::free_balance(evm_account(recipient)), 0);
 
         let amount = 1_000 * UNIT;
-        let precompile = H160::from_low_u64_be(ERC20_PRECOMPILE);
+        let precompile = balances_erc20();
         let info = call_contract(caller, precompile, encode_transfer(recipient, amount));
         assert!(info.exit_reason.is_succeed(), "{:?}", info.exit_reason);
 

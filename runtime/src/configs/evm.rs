@@ -165,7 +165,7 @@ pub mod pallet_precompiles {
 		/// it from token listings, so it is published for both to read
 		/// rather than copied into each.
 		#[pallet::constant_name(BalancesErc20)]
-		fn balances_erc20() -> H160 {
+		pub fn balances_erc20() -> H160 {
 			H160::from_low_u64_be(BALANCES_ERC20)
 		}
 	}
