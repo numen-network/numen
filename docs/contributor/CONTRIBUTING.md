@@ -40,7 +40,7 @@ The set of labels and their description can be found [here](./github-labels.md).
 
 1. Please use our [Pull Request Template](./PULL_REQUEST_TEMPLATE.md) and make sure all relevant information is
    reflected in your PR.
-2. Please tag each PR with minimum one `T*` label.
+2. Please tag each PR with minimum one `A-*` label.
 3. If you’re still working on your PR, please submit as “Draft”. Once a PR is ready for review change the status to
    “Open”, so that the maintainers get to review your PR. Generally PRs should sit for 48 hours in order to garner
    feedback. It may be merged before if all relevant parties had a look at it.
@@ -81,6 +81,3 @@ not. Please do not file support issues here.
 Before opening a new issue search to see if a similar one already exists and leave a comment that you also experienced
 this issue or add your specifics that are related to an existing issue.
 
-Please label issues with the following labels (only relevant for maintainer):
-- `T-*` issue type. EXACTLY ONE REQUIRED.
-- `A-*` issue area. OPTIONAL. MULTIPLE ALLOWED.
