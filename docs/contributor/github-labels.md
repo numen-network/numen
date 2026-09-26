@@ -2,41 +2,29 @@
 
 > Label taxonomy for issues and pull requests.
 
-Labels are organized into two dimensions, each with a single-letter prefix so they sort naturally in the GitHub UI.
-
 ## Rules
 
-- `T-*` issue type. EXACTLY ONE REQUIRED.
-- `A-*` issue area. OPTIONAL. MULTIPLE ALLOWED.
+- Require at least one area
 
 ## Labels
 
-### Area (A)
+### A - Areas: PR/Issue is related to this area.
 
-| Label          | Description                            |
-| -------------- | -------------------------------------- |
-| `A-consensus`  | Consensus mechanism (Generally)        |
-| `A-pallet`     | Runtime pallet                         |
-| `A-session`    | Session management                     |
-| `A-validator`  | Validator system                       |
-| `A-difficulty` | Difficulty adjustment system           |
-| `A-pow`        | POW block production, mining algorithm |
-| `A-grandpa`    | GRANDPA finality and fork-choice       |
-| `A-evm`        | Frontier EVM integration               |
-| `A-node`       | Node binary, service layer, CLI        |
-| `A-runtime`    | Runtime configuration and framework    |
-| `A-imonline`   | im-online                              |
-| `A-governance` | OpenGov, treasury and bounties         |
-| `A-prime/sudo` | Privileged account with root access    |
-
-### Type (T)
-
-| Label             | Description                                                 |
-| ----------------- | ----------------------------------------------------------- |
-| `T-enhancement`   | New feature or request                                      |
-| `T-bug`           | Something isn't working                                     |
-| `T-refactor`      | Refactoring / code improvement                              |
-| `T-test`          | Test cases                                                  |
-| `T-documentation` | Improvements or additions to documentation                  |
-| `T-ci`            | CI/CD, build, Dockerfile                                    |
-| `T-discussion`    | Discussion / Further information is requested / Help wanted |
+| Label               | Description                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| `A-ci`              | Workflow, release pipelines                                                                   |
+| `A-docs`            | Documentation                                                                                 |
+| `A-economics`       | Fees, block rewards, issuance and vesting                                                     |
+| `A-evm`             | Frontier, Ethereum RPC, precompile                                                            |
+| `A-governance`      | OpenGov, treasury                                                                             |
+| `A-grandpa`         | GRANDPA finality and fork-choice                                                              |
+| `A-identity`        | Identity                                                                                      |
+| `A-node`            | Client code no other area owns, such as the service, CLI and telemetry                        |
+| `A-poscan`          | Consensus mechanism (PoScan)                                                                  |
+| `A-pow`             | POW block production, mining algorithm, miner RPC, fork choice, ASERT                         |
+| `A-prime/sudo`      | Privileged account with root access                                                           |
+| `A-rpc`             | Any RPC API                                                                                   |
+| `A-runtime`         | Runtime wiring no other area owns, such as metadata, weights, chain specs and genesis presets |
+| `A-test`            | Test cases, bench                                                                             |
+| `A-validator`       | Validator system, session, im-online, equivocation                                            |
+| `A-zombienet_tests` | Zombienet test cases                                                                          |
