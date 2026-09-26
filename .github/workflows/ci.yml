@@ -10,7 +10,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!**/*.json'
+              - '!LICENSE'
+              - '!.maintain/**'
+              - '!scripts/**'
+              - '!zombienet/**'
+
   clippy:
+    needs: changes
+    # Skipped jobs count as passing required checks. Run these even when the changes job fails.
+    if: &code ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +49,8 @@ jobs:
         timeout-minutes: 30
 
   test:
+    needs: changes
+    if: *code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +65,8 @@ jobs:
         timeout-minutes: 30
 
   weights:
+    needs: changes
+    if: *code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +78,8 @@ jobs:
           fi
 
   runtime-wasm:
+    needs: changes
+    if: *code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,18 +90,13 @@ jobs:
         run: cargo check -p numen-runtime --locked --features metadata-hash
         timeout-minutes: 45
 
-  determinism:
-    name: determinism (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-latest
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    steps:
+  # Skipped matrix jobs report unexpanded names that no required check matches.
+  determinism-x86_64:
+    name: determinism (x86_64)
+    needs: changes
+    if: *code
+    runs-on: ubuntu-latest
+    steps: &determinism
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -93,3 +118,10 @@ jobs:
           cargo test -p obj-asteroid --test spectral --target wasm32-wasip1 --locked golden
           cargo test -p poscan --test golden --target wasm32-wasip1 --locked
         timeout-minutes: 15
+
+  determinism-aarch64:
+    name: determinism (aarch64)
+    needs: changes
+    if: *code
+    runs-on: ubuntu-24.04-arm
+    steps: *determinism
