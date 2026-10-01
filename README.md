@@ -102,3 +102,27 @@ so generate a keypair offline (e.g. with `subkey generate`) and pass only the SS
 Keep the private key on a separate, offline machine.
 
 If the address is invalid SS58 the node refuses to start.
+
+### numen-miner
+
+[numen-miner](https://github.com/numen-network/numen-miner) mines on NVIDIA and AMD GPUs through the mining RPC. Start the node with `--miner`, then point the miner at port 9944.
+
+```bash
+./numen --chain mainnet-raw.json --miner <YOUR_ADDRESS>
+```
+
+```bash
+./numen-miner --url ws://127.0.0.1:9944
+```
+
+For rigs on other machines, add `--rpc-external --rpc-cors all` and open port 9944 to your rigs only. Without `--rpc-cors all` the node rejects them with a 403.
+
+```bash
+./numen --chain mainnet-raw.json --miner <YOUR_ADDRESS> --rpc-external --rpc-cors all
+```
+
+```bash
+./numen-miner --url ws://<NODE_IP>:9944
+```
+
+The node hands out tasks only once it's synced, so the miner sits idle until then.
