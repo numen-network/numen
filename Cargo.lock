@@ -6886,6 +6886,7 @@ dependencies = [
  "poscan",
  "poscan-pow",
  "precompile-utils",
+ "sc-chain-spec",
  "sc-executor",
  "scale-info",
  "serde",

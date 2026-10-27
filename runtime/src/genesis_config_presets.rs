@@ -1,6 +1,7 @@
 use crate::{
-	AccountId, BalancesConfig, DifficultyConfig, EVMChainIdConfig, EVMConfig, PrimeConfig,
-	RuntimeGenesisConfig, SessionConfig, SessionKeys, ValidatorConfig, UNIT,
+	AccountId, BalancesConfig, DifficultyConfig, EVMChainIdConfig, EVMConfig,
+	GenesisRegistrarsConfig, PrimeConfig, RuntimeGenesisConfig, SessionConfig, SessionKeys,
+	ValidatorConfig, UNIT,
 };
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use fp_evm::GenesisAccount;
@@ -117,6 +118,19 @@ fn live_balances() -> Vec<(AccountId, u128)> {
 	]
 }
 
+fn dev_registrars() -> Vec<AccountId> {
+	vec![
+		Sr25519Keyring::Alice.to_account_id()
+	]
+}
+
+fn live_registrars() -> Vec<AccountId> {
+	vec![
+		// nu7iBot1ZuaFNt6wh4CQ8B8yh82Q6PsgJF7N7gfCGnoLLxZwv
+		hex!("e02f0d696b3b9eecad3e7bf0e651a7c4d8ec8925a8ae9662a268655d1da26546").into()
+	]
+}
+
 // nu7PrimeGGWHhqsFvKxLbmCsudaCDMDYaKwiDVR46k3AHUtYk
 const PRIME: [u8; 32] = hex!("d23460fba7462ff9493b18c9974274af46e6c23ac219cfb0f38930b36275576a");
 
@@ -124,6 +138,7 @@ const PRIME: [u8; 32] = hex!("d23460fba7462ff9493b18c9974274af46e6c23ac219cfb0f3
 fn genesis_patch(
 	balances: Vec<(AccountId, u128)>,
 	prime_key: Option<AccountId>,
+	registrars: Vec<AccountId>,
 	validators: Vec<(AccountId, GrandpaId, ImOnlineId)>,
 	chain_id: u64,
 	evm_accounts: BTreeMap<H160, GenesisAccount>,
@@ -141,6 +156,7 @@ fn genesis_patch(
 	build_struct_json_patch!(RuntimeGenesisConfig {
 		balances: BalancesConfig { balances },
 		prime: PrimeConfig { key: prime_key },
+		genesis_registrars: GenesisRegistrarsConfig { registrars },
 		difficulty: DifficultyConfig { initial_difficulty },
 		session: SessionConfig { keys: session_keys },
 		validator: ValidatorConfig {
@@ -157,6 +173,7 @@ pub fn development_config_genesis() -> Value {
 	genesis_patch(
 		dev_balances(),
 		Some(Sr25519Keyring::Alice.to_account_id()),
+		dev_registrars(),
 		dev_validators(),
 		DEV_EVM_CHAIN_ID,
 		dev_evm_accounts(),
@@ -168,6 +185,7 @@ pub fn local_config_genesis() -> Value {
 	genesis_patch(
 		dev_balances(),
 		Some(Sr25519Keyring::Alice.to_account_id()),
+		dev_registrars(),
 		dev_validators(),
 		DEV_EVM_CHAIN_ID,
 		dev_evm_accounts(),
@@ -179,6 +197,7 @@ pub fn integration_config_genesis() -> Value {
 	genesis_patch(
 		dev_balances(),
 		Some(Sr25519Keyring::Alice.to_account_id()),
+		dev_registrars(),
 		dev_validators(),
 		DEV_EVM_CHAIN_ID,
 		dev_evm_accounts(),
@@ -190,6 +209,7 @@ pub fn testnet_config_genesis() -> Value {
 	genesis_patch(
 		live_balances(),
 		Some(PRIME.into()),
+		live_registrars(),
 		testnet_validators(),
 		TEST_EVM_CHAIN_ID,
 		BTreeMap::new(),
@@ -201,6 +221,7 @@ pub fn mainnet_config_genesis() -> Value {
 	genesis_patch(
 		live_balances(),
 		Some(PRIME.into()),
+		live_registrars(),
 		live_validators(),
 		MAIN_EVM_CHAIN_ID,
 		BTreeMap::new(),
