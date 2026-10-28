@@ -116,24 +116,18 @@ fn dev_presets_let_alice_judge_from_genesis() {
 }
 
 #[test]
-fn testnet_preset_seats_the_registrar_bot_without_a_fee() {
-	preset_ext(presets::TESTNET_RUNTIME_PRESET).execute_with(|| {
-		let registrars = pallet_identity::Registrars::<Runtime>::get();
-		assert_eq!(registrars.len(), 1);
-		let bot = registrars[0].as_ref().unwrap();
-		let (expected, _) =
-			AccountId::from_ss58check_with_version("nu7iBot1ZuaFNt6wh4CQ8B8yh82Q6PsgJF7N7gfCGnoLLxZwv")
-				.unwrap();
-		assert_eq!(bot.account, expected);
-		assert_eq!(bot.fee, 0);
-	});
-}
-
-#[test]
-fn mainnet_preset_writes_no_registrar_storage() {
-	preset_ext(presets::MAINNET_RUNTIME_PRESET).execute_with(|| {
-		assert!(!pallet_identity::Registrars::<Runtime>::exists());
-	});
+fn live_presets_seat_the_registrar_bot_without_a_fee() {
+	let (expected, _) =
+		AccountId::from_ss58check_with_version("nu7iBot1ZuaFNt6wh4CQ8B8yh82Q6PsgJF7N7gfCGnoLLxZwv").unwrap();
+	for preset in [presets::TESTNET_RUNTIME_PRESET, presets::MAINNET_RUNTIME_PRESET] {
+		preset_ext(preset).execute_with(|| {
+			let registrars = pallet_identity::Registrars::<Runtime>::get();
+			assert_eq!(registrars.len(), 1, "{preset}");
+			let bot = registrars[0].as_ref().unwrap();
+			assert_eq!(bot.account, expected, "{preset}");
+			assert_eq!(bot.fee, 0, "{preset}");
+		});
+	}
 }
 
 fn identity_admin() -> RuntimeOrigin {
