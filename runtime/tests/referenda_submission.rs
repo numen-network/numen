@@ -52,12 +52,11 @@ fn install_prime() -> AccountId {
 	key
 }
 
-/// Installs Eve as registrar zero through the prime key.
+/// Installs Eve as registrar zero through the identity admin track.
 fn install_registrar() -> AccountId {
-	let prime = install_prime();
 	let registrar = funded(Sr25519Keyring::Eve);
 	assert_ok!(Identity::add_registrar(
-		RuntimeOrigin::signed(prime),
+		RuntimeOrigin::from(pallet_custom_origins::Origin::IdentityAdmin),
 		src(&registrar),
 	));
 	registrar

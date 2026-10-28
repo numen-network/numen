@@ -1,7 +1,6 @@
-//! Identity wiring. Registrars answer to the prime key and the identity admin
-//! track, and a preset can seat them at genesis. Username authorities answer to
-//! the track alone, only root can force an identity off the chain, and deposits
-//! are priced per encoded byte.
+//! Identity wiring. Registrars and username authorities answer to the identity
+//! admin track alone, and a preset can seat registrars at genesis. Only root can
+//! force an identity off the chain, and deposits are priced per encoded byte.
 
 mod common;
 
@@ -53,23 +52,22 @@ fn expected_deposit(info: &IdInfo) -> Balance {
 }
 
 #[test]
-fn add_registrar_accepts_prime_rejects_others() {
+fn add_registrar_rejects_prime_signed_and_root() {
 	new_test_ext().execute_with(|| {
 		let key = install_prime();
 		let stranger = Sr25519Keyring::Alice.to_account_id();
 
-		assert_noop!(
-			Identity::add_registrar(RuntimeOrigin::signed(stranger.clone()), src(&stranger)),
-			DispatchError::BadOrigin,
-		);
-		assert_noop!(
-			Identity::add_registrar(RuntimeOrigin::root(), src(&stranger)),
-			DispatchError::BadOrigin,
-		);
+		for origin in [
+			RuntimeOrigin::signed(key),
+			RuntimeOrigin::signed(stranger.clone()),
+			RuntimeOrigin::root(),
+		] {
+			assert_noop!(
+				Identity::add_registrar(origin, src(&stranger)),
+				DispatchError::BadOrigin,
+			);
+		}
 		assert!(pallet_identity::Registrars::<Runtime>::get().is_empty());
-
-		assert_ok!(Identity::add_registrar(RuntimeOrigin::signed(key), src(&stranger)));
-		assert_eq!(pallet_identity::Registrars::<Runtime>::get().len(), 1);
 	});
 }
 

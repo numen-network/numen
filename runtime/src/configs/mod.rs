@@ -7,7 +7,7 @@ use frame_support::{
 	traits::{
 		fungible::{Balanced, Credit, HoldConsideration},
 		tokens::{PayFromAccount, UnityAssetBalanceConversion},
-		ConstU128, ConstU32, ConstU64, ConstU8, EitherOfDiverse, EqualPrivilegeOnly, Get, Imbalance,
+		ConstU128, ConstU32, ConstU64, ConstU8, EqualPrivilegeOnly, Get, Imbalance,
 		InstanceFilter, LinearStoragePrice, OnUnbalanced, VariantCountOf, WithdrawReasons,
 	},
 	weights::{
@@ -891,8 +891,7 @@ impl pallet_identity::Config for Runtime {
 	// current state. The payload stays in the block that set it, so the power
 	// removes nothing while handing prime a way to slash someone's deposit.
 	type ForceOrigin = EnsureRoot<AccountId>;
-	type RegistrarOrigin =
-		EitherOfDiverse<pallet_prime::EnsurePrime<Runtime>, governance::IdentityAdminOrigin>;
+	type RegistrarOrigin = governance::IdentityAdminOrigin;
 	type OffchainSignature = Signature;
 	type SigningPublicKey = <Signature as Verify>::Signer;
 	type UsernameAuthorityOrigin = governance::IdentityAdminOrigin;
