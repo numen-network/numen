@@ -628,12 +628,6 @@ impl pallet_validator::BenchmarkHelper<AccountId> for ValidatorBenchmarkHelper {
 		pallet_session::NextKeys::<Runtime>::insert(who, keys);
 	}
 }
-/// `ValidatorSetWithIdentification` adapter over `pallet-session`.
-///
-/// `pallet-im-online` requires its `ValidatorSet` to also expose an
-/// `Identification` type so that offline reports can carry a per-validator
-/// payload. We do not run a separate slashing/staking subsystem yet, so the
-/// identification is a unit value.
 pub struct UnitIdentification;
 
 impl sp_runtime::traits::Convert<AccountId, Option<()>> for UnitIdentification {
@@ -642,6 +636,12 @@ impl sp_runtime::traits::Convert<AccountId, Option<()>> for UnitIdentification {
 	}
 }
 
+/// `ValidatorSetWithIdentification` adapter over `pallet-session`.
+///
+/// `pallet-im-online` requires its `ValidatorSet` to also expose an
+/// `Identification` type so that offline reports can carry a per-validator
+/// payload. We do not run a separate slashing/staking subsystem yet, so the
+/// identification is a unit value.
 pub struct ValidatorIdentification;
 
 impl frame_support::traits::ValidatorSet<AccountId> for ValidatorIdentification {
@@ -657,9 +657,24 @@ impl frame_support::traits::ValidatorSet<AccountId> for ValidatorIdentification 
 	}
 }
 
+/// Identifies only validators with an `Active` lock.
+///
+/// A kicked or exiting validator stays in the set until the next rotation.
+/// `pallet-im-online` drops any validator mapped to `None` from its offline
+/// report, so that last session can't report it again.
+pub struct ActiveValidatorIdentification;
+
+impl sp_runtime::traits::Convert<AccountId, Option<()>> for ActiveValidatorIdentification {
+	fn convert(who: AccountId) -> Option<()> {
+		pallet_validator::ValidatorLocks::<Runtime>::get(&who)
+			.filter(|info| info.status == pallet_validator::ValidatorStatus::Active)
+			.map(|_| ())
+	}
+}
+
 impl frame_support::traits::ValidatorSetWithIdentification<AccountId> for ValidatorIdentification {
 	type Identification = ();
-	type IdentificationOf = UnitIdentification;
+	type IdentificationOf = ActiveValidatorIdentification;
 }
 
 
