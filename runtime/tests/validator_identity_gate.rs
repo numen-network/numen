@@ -10,6 +10,7 @@ use frame_support::{
 	traits::{tokens::fungible::Mutate, Contains},
 };
 use numen_runtime::{
+	configs::governance::pallet_custom_origins,
 	identity_info::{IdentityInfo, Text},
 	AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin,
 	UNIT,
@@ -36,13 +37,11 @@ fn identity_info(x: Text<32>) -> IdInfo {
 }
 
 /// Registers `info` for `who` and judges it Reasonable through a registrar
-/// installed via the prime key.
+/// installed via the identity admin track.
 fn judged_identity(who: &AccountId, info: IdInfo) {
-	let prime = Sr25519Keyring::Ferdie.to_account_id();
-	pallet_prime::Key::<Runtime>::put(&prime);
 	let registrar = Sr25519Keyring::Eve.to_account_id();
 	assert_ok!(Identity::add_registrar(
-		RuntimeOrigin::signed(prime),
+		RuntimeOrigin::from(pallet_custom_origins::Origin::IdentityAdmin),
 		src(&registrar),
 	));
 	Balances::set_balance(who, FUNDS);
