@@ -31,6 +31,7 @@ use sp_version::RuntimeVersion;
 
 pub mod evm;
 pub mod governance;
+pub mod identity;
 pub mod poscan;
 
 // Local module imports

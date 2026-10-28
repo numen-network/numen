@@ -1,6 +1,7 @@
 //! Identity wiring. Registrars answer to the prime key and the identity admin
-//! track, username authorities to the track alone, only root can force an
-//! identity off the chain, and deposits are priced per encoded byte.
+//! track, and a preset can seat them at genesis. Username authorities answer to
+//! the track alone, only root can force an identity off the chain, and deposits
+//! are priced per encoded byte.
 
 mod common;
 
@@ -12,9 +13,15 @@ use numen_runtime::{
 	identity_info::{IdentityField, IdentityInfo},
 	AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin, UNIT,
 };
-use pallet_identity::IdentityInformationProvider;
+use numen_runtime::{genesis_config_presets as presets, RuntimeGenesisConfig};
+use pallet_identity::{IdentityInformationProvider, Judgement};
+use sp_core::crypto::Ss58Codec;
+use sp_io::TestExternalities;
 use sp_keyring::Sr25519Keyring;
-use sp_runtime::{traits::StaticLookup, DispatchError};
+use sp_runtime::{
+	traits::{Hash, StaticLookup},
+	DispatchError,
+};
 
 const FUNDS: Balance = 10_000 * UNIT;
 
@@ -64,6 +71,63 @@ fn add_registrar_accepts_prime_rejects_others() {
 		assert_ok!(Identity::add_registrar(RuntimeOrigin::signed(key), src(&stranger)));
 		assert_eq!(pallet_identity::Registrars::<Runtime>::get().len(), 1);
 	});
+}
+
+/// Chain state as a node would build it from `preset`.
+fn preset_ext(preset: &str) -> TestExternalities {
+	let mut config = serde_json::to_value(RuntimeGenesisConfig::default()).unwrap();
+	let patch = presets::get_preset(&preset.into()).expect("preset exists");
+	sc_chain_spec::json_merge(&mut config, serde_json::from_slice(&patch).unwrap());
+	let mut ext = TestExternalities::default();
+	ext.execute_with(|| {
+		frame_support::genesis_builder_helper::build_state::<RuntimeGenesisConfig>(
+			serde_json::to_vec(&config).unwrap(),
+		)
+		.expect("preset builds");
+	});
+	ext
+}
+
+#[test]
+fn dev_presets_let_alice_judge_from_genesis() {
+	for preset in [
+		sp_genesis_builder::DEV_RUNTIME_PRESET,
+		sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET,
+		presets::INTEGRATION_RUNTIME_PRESET,
+	] {
+		preset_ext(preset).execute_with(|| {
+			let alice = Sr25519Keyring::Alice.to_account_id();
+			let bob = Sr25519Keyring::Bob.to_account_id();
+			let info = identity_info();
+			assert_ok!(Identity::set_identity(RuntimeOrigin::signed(bob.clone()), Box::new(info.clone())));
+
+			assert_ok!(Identity::provide_judgement(
+				RuntimeOrigin::signed(alice),
+				0,
+				src(&bob),
+				Judgement::Reasonable,
+				<Runtime as frame_system::Config>::Hashing::hash_of(&info),
+			));
+
+			let registration = pallet_identity::IdentityOf::<Runtime>::get(&bob).unwrap();
+			assert_eq!(registration.judgements.into_inner(), vec![(0, Judgement::Reasonable)], "{preset}");
+		});
+	}
+}
+
+#[test]
+fn live_presets_seat_the_registrar_bot_without_a_fee() {
+	let (expected, _) =
+		AccountId::from_ss58check_with_version("nu7iBot1ZuaFNt6wh4CQ8B8yh82Q6PsgJF7N7gfCGnoLLxZwv").unwrap();
+	for preset in [presets::TESTNET_RUNTIME_PRESET, presets::MAINNET_RUNTIME_PRESET] {
+		preset_ext(preset).execute_with(|| {
+			let registrars = pallet_identity::Registrars::<Runtime>::get();
+			assert_eq!(registrars.len(), 1, "{preset}");
+			let bot = registrars[0].as_ref().unwrap();
+			assert_eq!(bot.account, expected, "{preset}");
+			assert_eq!(bot.fee, 0, "{preset}");
+		});
+	}
 }
 
 fn identity_admin() -> RuntimeOrigin {

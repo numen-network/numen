@@ -304,6 +304,9 @@ mod runtime {
 
 	// ---
 
+	#[runtime::pallet_index(31)]
+	pub type GenesisRegistrars = configs::identity::pallet_genesis_registrars;
+
 	#[runtime::pallet_index(255)]
 	pub type Prime = pallet_prime;
 }
