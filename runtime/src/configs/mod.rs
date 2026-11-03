@@ -158,10 +158,11 @@ parameter_types! {
 	/// 10 second block time to hold the same wall clock response. Sustained
 	/// full blocks then reach `MaximumMultiplier` in under three days.
 	pub AdjustmentVariable: Multiplier = Multiplier::saturating_from_rational(125, 1_000_000);
-	/// Floor kept symmetric with `MaximumMultiplier`. The stock 1e-6 lets an
-	/// idle chain erode the fee anchor by six orders of magnitude.
-	pub MinimumMultiplier: Multiplier = Multiplier::saturating_from_rational(1, 10u128);
-	pub MaximumMultiplier: Multiplier = Multiplier::saturating_from_integer(10);
+	/// A tenth of [`FEE_ANCHOR`], kept symmetric with `MaximumMultiplier`. The
+	/// stock 1e-6 floor lets an idle chain erode the anchor by six orders of
+	/// magnitude.
+	pub MinimumMultiplier: Multiplier = Multiplier::saturating_from_integer(FEE_ANCHOR / 10);
+	pub MaximumMultiplier: Multiplier = Multiplier::saturating_from_integer(FEE_ANCHOR * 10);
 }
 
 /// Drives the fee multiplier from whichever block dimension sits closest to its
@@ -280,13 +281,21 @@ impl OnUnbalanced<Credit<AccountId, Balances>> for DealWithFees {
 	}
 }
 
-/// Price of one weight unit in smallest units. A second of reference compute
-/// costs 50 NUMN, so filling a block's normal class costs 75 NUMN.
+/// Fee multiplier value at which [`WEIGHT_FEE`] and [`LENGTH_FEE`] are the
+/// prices charged. Readers that floor the multiplier to an integer, as an EVM
+/// gas price does, still see it move in steps of a ten-thousandth of the
+/// anchor.
+pub const FEE_ANCHOR: u128 = 10_000;
+
+/// Price of one weight unit in smallest units at [`FEE_ANCHOR`]. A second of
+/// reference compute costs 50 NUMN, so filling a block's normal class costs
+/// 75 NUMN.
 pub const WEIGHT_FEE: Balance = 50_000_000;
 
-/// Price of one encoded byte. Ethereum charges 16 gas per non-zero calldata
-/// byte, priced here at 1000 gwei. Keeps a length-full block within the same
-/// order as a weight-full one so neither dimension is the cheap one to abuse.
+/// Price of one encoded byte at [`FEE_ANCHOR`]. Ethereum charges 16 gas per
+/// non-zero calldata byte, priced here at 1000 gwei. Keeps a length-full block
+/// within the same order as a weight-full one so neither dimension is the
+/// cheap one to abuse.
 pub const LENGTH_FEE: Balance = 16_000_000_000_000;
 
 /// Byte price carrying the same congestion multiplier the weight price pays.
@@ -298,7 +307,7 @@ impl WeightToFee for AdjustedLengthToFee {
 	type Balance = Balance;
 
 	fn weight_to_fee(length: &Weight) -> Balance {
-		let flat = LENGTH_FEE.saturating_mul(Balance::from(length.ref_time()));
+		let flat = (LENGTH_FEE / FEE_ANCHOR).saturating_mul(Balance::from(length.ref_time()));
 		crate::TransactionPayment::next_fee_multiplier().saturating_mul_int(flat)
 	}
 }
@@ -307,7 +316,7 @@ impl pallet_transaction_payment::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type OnChargeTransaction = FungibleAdapter<Balances, DealWithFees>;
 	type OperationalFeeMultiplier = ConstU8<5>;
-	type WeightToFee = ConstantMultiplier<Balance, ConstU128<WEIGHT_FEE>>;
+	type WeightToFee = ConstantMultiplier<Balance, ConstU128<{ WEIGHT_FEE / FEE_ANCHOR }>>;
 	type LengthToFee = AdjustedLengthToFee;
 	type FeeMultiplierUpdate = FullnessFeeUpdate<Runtime>;
 	type WeightInfo = crate::weights::pallet_transaction_payment::WeightInfo<Runtime>;

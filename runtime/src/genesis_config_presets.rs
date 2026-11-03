@@ -1,15 +1,18 @@
 use crate::{
-	AccountId, BalancesConfig, DifficultyConfig, GenesisRegistrarsConfig, PrimeConfig,
-	RuntimeGenesisConfig, SessionConfig, SessionKeys, ValidatorConfig, UNIT,
+	configs::FEE_ANCHOR, AccountId, BalancesConfig, DifficultyConfig, GenesisRegistrarsConfig,
+	PrimeConfig, RuntimeGenesisConfig, SessionConfig, SessionKeys, TransactionPaymentConfig,
+	ValidatorConfig, UNIT,
 };
 use alloc::{vec, vec::Vec};
 use frame_support::build_struct_json_patch;
+use pallet_transaction_payment::Multiplier;
 use hex_literal::hex;
 use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
 use serde_json::Value;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{crypto::UncheckedInto, U256};
 use sp_genesis_builder::{self, PresetId};
+use sp_runtime::FixedPointNumber;
 use sp_keyring::{Ed25519Keyring, Sr25519Keyring};
 
 const GENESIS_TREASURY_ISSUANCE: u128 = 550_000_000 * UNIT;
@@ -128,6 +131,9 @@ fn genesis_patch(
 		validator: ValidatorConfig {
 			initial_validators: validators.iter().map(|(a, _, _)| a.clone()).collect::<Vec<_>>(),
 			..Default::default()
+		},
+		transaction_payment: TransactionPaymentConfig {
+			multiplier: Multiplier::saturating_from_integer(FEE_ANCHOR),
 		},
 	})
 }

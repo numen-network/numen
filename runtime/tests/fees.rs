@@ -1,13 +1,14 @@
 //! Fee routing and calibration. Transaction fees split between the PoW author
 //! from the block digest and the treasury, and tips reach the author whole. A
-//! block without an author pays everything to the treasury. Weight and length
-//! price a full block alike, and filling either one raises the next block's
-//! price.
+//! block without an author pays everything to the treasury. At the fee anchor
+//! the weight and byte prices are the published unit prices, every preset
+//! starts there, and filling a block on either dimension raises the next
+//! block's price.
 
 mod common;
 
 use codec::Encode;
-use common::new_test_ext;
+use common::{new_test_ext, preset_ext};
 use frame_support::{
 	dispatch::DispatchClass,
 	weights::Weight,
@@ -22,19 +23,21 @@ use frame_support::{
 use numen_runtime::{
 	configs::{
 		DealWithFees, FullnessFeeUpdate, RuntimeBlockLength, RuntimeBlockWeights,
-		TreasuryAccount, LENGTH_FEE, MINER_FEE_SHARE, WEIGHT_FEE,
+		TreasuryAccount, FEE_ANCHOR, LENGTH_FEE, MINER_FEE_SHARE, WEIGHT_FEE,
 	},
-	AccountId, Balance, Balances, Runtime, System, TransactionPayment, UNIT,
+	genesis_config_presets as presets, AccountId, Balance, Balances, Runtime, System,
+	TransactionPayment, UNIT,
 };
-use pallet_transaction_payment::Multiplier;
+use pallet_transaction_payment::{Multiplier, NextFeeMultiplier};
 use sp_consensus_pow::POW_ENGINE_ID;
 use sp_keyring::Sr25519Keyring;
-use sp_runtime::{
-	traits::{Convert, One},
-	DigestItem, FixedPointNumber,
-};
+use sp_runtime::{traits::Convert, DigestItem, FixedPointNumber, Saturating};
 
 const CALLER_FUNDS: Balance = 1_000 * UNIT;
+
+fn anchor() -> Multiplier {
+	Multiplier::saturating_from_integer(FEE_ANCHOR)
+}
 
 fn miner() -> AccountId {
 	Sr25519Keyring::Eve.to_account_id()
@@ -170,6 +173,36 @@ fn substrate_tips_reach_the_treasury_without_author_digest() {
 	});
 }
 
+/// The anchor is where the multiplier charges what the published unit prices
+/// say, so a divisor on the wrong scale shows up as a price off by a factor of
+/// the anchor.
+#[test]
+fn the_anchor_charges_the_published_unit_prices() {
+	new_test_ext().execute_with(|| {
+		NextFeeMultiplier::<Runtime>::put(anchor());
+		let ref_time = 1_000_000;
+		let bytes = 1_000;
+
+		let unadjusted = TransactionPayment::weight_to_fee(Weight::from_parts(ref_time, 0));
+		assert_eq!(
+			NextFeeMultiplier::<Runtime>::get().saturating_mul_int(unadjusted),
+			WEIGHT_FEE * Balance::from(ref_time),
+		);
+		assert_eq!(TransactionPayment::length_to_fee(bytes), LENGTH_FEE * Balance::from(bytes));
+	});
+}
+
+/// A chain built from any preset charges the published unit prices from its
+/// first block.
+#[test]
+fn every_preset_starts_the_multiplier_on_the_anchor() {
+	for preset in presets::preset_names() {
+		preset_ext(&preset).execute_with(|| {
+			assert_eq!(NextFeeMultiplier::<Runtime>::get(), anchor(), "preset {preset}");
+		});
+	}
+}
+
 /// A block fills on whichever of weight or length runs out first, so the two
 /// have to cost about the same. Otherwise the cheaper dimension carries the
 /// spam.
@@ -202,7 +235,7 @@ fn bytes_alone_raise_the_multiplier() {
 		System::set_block_consumed_resources(Weight::zero(), max_length as usize);
 
 		assert!(
-			FullnessFeeUpdate::<Runtime>::convert(Multiplier::one()) > Multiplier::one(),
+			FullnessFeeUpdate::<Runtime>::convert(anchor()) > anchor(),
 			"a length full block has to raise the next block's price",
 		);
 	});
@@ -218,7 +251,7 @@ fn weight_alone_raises_the_multiplier() {
 		System::set_block_consumed_resources(max_weight, 0);
 
 		assert!(
-			FullnessFeeUpdate::<Runtime>::convert(Multiplier::one()) > Multiplier::one(),
+			FullnessFeeUpdate::<Runtime>::convert(anchor()) > anchor(),
 			"a weight full block has to raise the next block's price",
 		);
 	});
@@ -230,7 +263,7 @@ fn an_empty_block_lowers_the_multiplier() {
 		System::set_block_consumed_resources(Weight::zero(), 0);
 
 		assert!(
-			FullnessFeeUpdate::<Runtime>::convert(Multiplier::one()) < Multiplier::one(),
+			FullnessFeeUpdate::<Runtime>::convert(anchor()) < anchor(),
 			"an idle chain has to get cheaper",
 		);
 	});
@@ -242,11 +275,11 @@ fn an_empty_block_lowers_the_multiplier() {
 fn the_byte_price_follows_the_multiplier() {
 	new_test_ext().execute_with(|| {
 		let bytes = 1_000;
+		NextFeeMultiplier::<Runtime>::put(anchor());
 		let flat = TransactionPayment::length_to_fee(bytes);
 
-		pallet_transaction_payment::NextFeeMultiplier::<Runtime>::put(
-			Multiplier::saturating_from_integer(4),
-		);
+		let four_times = anchor().saturating_mul(Multiplier::saturating_from_integer(4));
+		NextFeeMultiplier::<Runtime>::put(four_times);
 
 		assert_eq!(
 			TransactionPayment::length_to_fee(bytes),

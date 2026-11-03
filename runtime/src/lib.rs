@@ -10,6 +10,7 @@ mod benchmarks;
 pub mod configs;
 pub mod identity_info;
 pub mod inherent_checks;
+pub mod migrations;
 pub mod weights;
 
 extern crate alloc;
@@ -153,8 +154,7 @@ pub type SignedPayload = generic::SignedPayload<RuntimeCall, TxExtension>;
 /// All migrations of the runtime, aside from the ones declared in the pallets.
 ///
 /// This can be a tuple of types, each implementing `OnRuntimeUpgrade`.
-#[allow(unused_parens)]
-type Migrations = ();
+type Migrations = (migrations::AnchorFeeMultiplier,);
 
 /// Executive: handles dispatch to the various modules.
 pub type Executive = frame_executive::Executive<
