@@ -1,6 +1,6 @@
 # EVM developer-tooling compatibility
 
-This directory verifies that the numen Frontier EVM stack works with the mainstream Ethereum toolchain.
+This directory verifies that the numen EVM layer, pallet-revive, works with the mainstream Ethereum toolchain.
 
 ## Layout
 
@@ -31,7 +31,7 @@ Start a single-node dev chain that exposes both the substrate and Ethereum RPC n
 
 ## Pre-funded development accounts
 
-Every preset (`development`, `local_testnet`, `integration`) pre-funds the six well-known **Frontier dev ECDSA accounts** with `1,000,000 NUMN` each. Their private keys are publicly documented and ship with every Frontier template; **they MUST NOT be used in any non-development network.**
+Every preset (`development`, `local_testnet`, `integration`) pre-funds the six well-known **Ethereum dev accounts** with `1,000,000 NUMN` each. Their private keys are publicly documented and ship with common EVM dev tooling; **they MUST NOT be used in any non-development network.**
 
 | Name      | Address                                      | Private key                                                          |
 | --------- | -------------------------------------------- | -------------------------------------------------------------------- |
@@ -41,8 +41,6 @@ Every preset (`development`, `local_testnet`, `integration`) pre-funds the six w
 | Dorothy   | `0x773539d4Ac0e786233D90A233654ccEE26a613D9` | `0x39539ab1876910bbf3a223d84a29e28f1cb4e2e456503e7e91ed39b2e7223d68` |
 | Ethan     | `0xFf64d3F6efE2317EE2807d223a0Bdc4c0c49dfDB` | `0x7dce9bc8babb68fec1409be38c8e1a52650206a7ed90ff956ae8a6d15eeaaef4` |
 | Faith     | `0xC0F0f4ab324C46e55D02D0033343B4Be8A55532d` | `0xb9d2ea9a615f3165812e8d44de0d24da9bbd164b65c4f0573e1ce2c8dbd9c8df` |
-
-The `runtime/tests/evm.rs` suite asserts that every preset emits exactly these six entries with the documented starting balance.
 
 ## MetaMask walkthrough
 

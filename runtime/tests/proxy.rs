@@ -1,6 +1,6 @@
-//! ProxyType filter wiring. NonTransfer fences off every fund moving entry,
-//! Governance admits only the governance pallets, and pallet-proxy enforces the
-//! filter at dispatch.
+//! ProxyType filter wiring. NonTransfer fences off every fund moving entry
+//! including contract calls, Governance admits only the governance pallets, and
+//! pallet-proxy enforces the filter at dispatch.
 
 mod common;
 
@@ -24,6 +24,16 @@ fn transfer_call(dest: &AccountId) -> RuntimeCall {
 	RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive {
 		dest: src(dest),
 		value: UNIT,
+	})
+}
+
+fn contract_call() -> RuntimeCall {
+	RuntimeCall::Revive(pallet_revive::Call::call {
+		dest: pallet_revive::H160::zero(),
+		value: UNIT,
+		weight_limit: frame_support::weights::Weight::zero(),
+		storage_deposit_limit: 0,
+		data: Vec::new(),
 	})
 }
 
@@ -75,7 +85,7 @@ fn governance_whitelist(voter: &AccountId) -> Vec<RuntimeCall> {
 #[test]
 fn non_transfer_blocks_every_fund_moving_entry() {
 	let dest = Sr25519Keyring::Bob.to_account_id();
-	for call in [transfer_call(&dest), vested_transfer_call(&dest)] {
+	for call in [transfer_call(&dest), contract_call(), vested_transfer_call(&dest)] {
 		assert!(
 			!ProxyType::NonTransfer.filter(&call),
 			"NonTransfer must block {call:?}",
@@ -104,7 +114,7 @@ fn governance_admits_only_the_governance_whitelist() {
 	for call in governance_whitelist(&who) {
 		assert!(ProxyType::Governance.filter(&call), "Governance must admit {call:?}");
 	}
-	for call in [transfer_call(&who), remark_call()] {
+	for call in [transfer_call(&who), contract_call(), remark_call()] {
 		assert!(!ProxyType::Governance.filter(&call), "Governance must block {call:?}");
 	}
 }

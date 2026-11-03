@@ -8,51 +8,16 @@
 
 mod common;
 
-use codec::Encode;
-use common::new_test_ext;
+use common::{new_test_ext, signed_immortal};
 use frame_support::traits::tokens::fungible::Mutate;
-use numen_runtime::{
-	AccountId, Balances, Executive, Runtime, RuntimeCall, SignedPayload, System, TxExtension,
-	UncheckedExtrinsic, UNIT,
-};
-use sp_core::Pair;
+use numen_runtime::{AccountId, Balances, Executive, RuntimeCall, System, UncheckedExtrinsic, UNIT};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::{
-	generic::Era,
 	transaction_validity::{InvalidTransaction, TransactionValidityError},
-	MultiAddress, MultiSignature,
+	MultiAddress,
 };
 
 const FUNDING: u128 = 5_000 * UNIT;
-
-fn immortal_extension(nonce: u32) -> TxExtension {
-	(
-		frame_system::AuthorizeCall::<Runtime>::new(),
-		frame_system::CheckNonZeroSender::<Runtime>::new(),
-		frame_system::CheckSpecVersion::<Runtime>::new(),
-		frame_system::CheckTxVersion::<Runtime>::new(),
-		frame_system::CheckGenesis::<Runtime>::new(),
-		frame_system::CheckEra::<Runtime>::from(Era::Immortal),
-		numen_runtime::check_nonce::CheckNonceKeepSigned::<Runtime>::from(nonce),
-		frame_system::CheckWeight::<Runtime>::new(),
-		pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(0),
-		frame_metadata_hash_extension::CheckMetadataHash::<Runtime>::new(false),
-		frame_system::WeightReclaim::<Runtime>::new(),
-	)
-}
-
-fn signed_immortal(signer: Sr25519Keyring, nonce: u32, call: RuntimeCall) -> UncheckedExtrinsic {
-	let payload =
-		SignedPayload::new(call, immortal_extension(nonce)).expect("implicit data resolves");
-	let signature = payload.using_encoded(|bytes| signer.pair().sign(bytes));
-	let (call, extension, _) = payload.deconstruct();
-	UncheckedExtrinsic::new_signed(
-		call,
-		MultiAddress::Id(signer.to_account_id()),
-		MultiSignature::Sr25519(signature),
-		extension,
-	)
-}
 
 fn transfer_all_to(dest: &AccountId) -> RuntimeCall {
 	RuntimeCall::Balances(pallet_balances::Call::transfer_all {

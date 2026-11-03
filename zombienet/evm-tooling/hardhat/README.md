@@ -35,7 +35,7 @@ Override the RPC endpoint with `NUMEN_RPC=http://host:port npx hardhat ...`.
 
 ## Pre-funded accounts
 
-The dev / local_testnet / integration genesis presets pre-fund the standard Frontier dev ECDSA accounts. The first three are wired into `hardhat.config.js`:
+The dev / local_testnet / integration genesis presets pre-fund the well-known Ethereum dev accounts. The first three are wired into `hardhat.config.js`:
 
 | Name      | Address                                      |
 | --------- | -------------------------------------------- |

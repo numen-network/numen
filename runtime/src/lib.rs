@@ -143,12 +143,41 @@ pub type TxExtension = (
 	frame_system::CheckWeight<Runtime>,
 	pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
 	frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
+	pallet_revive::evm::tx_extension::SetOrigin<Runtime>,
 	frame_system::WeightReclaim<Runtime>,
 );
 
+/// Extensions an Ethereum transaction runs through, the same ones a substrate
+/// transaction signs with.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct EthExtraImpl;
+
+impl pallet_revive::evm::runtime::EthExtra for EthExtraImpl {
+	type Config = Runtime;
+	type ExtensionV0 = TxExtension;
+	type ExtensionOtherVersions = sp_runtime::traits::InvalidVersion;
+
+	fn get_eth_extension(nonce: Nonce, tip: Balance) -> TxExtension {
+		(
+			frame_system::AuthorizeCall::<Runtime>::new(),
+			frame_system::CheckNonZeroSender::<Runtime>::new(),
+			frame_system::CheckSpecVersion::<Runtime>::new(),
+			frame_system::CheckTxVersion::<Runtime>::new(),
+			frame_system::CheckGenesis::<Runtime>::new(),
+			frame_system::CheckEra::<Runtime>::from(generic::Era::Immortal),
+			check_nonce::CheckNonceKeepSigned::<Runtime>::from(nonce),
+			frame_system::CheckWeight::<Runtime>::new(),
+			pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(tip),
+			frame_metadata_hash_extension::CheckMetadataHash::<Runtime>::new(false),
+			pallet_revive::evm::tx_extension::SetOrigin::<Runtime>::new_from_eth_transaction(),
+			frame_system::WeightReclaim::<Runtime>::new(),
+		)
+	}
+}
+
 /// Unchecked extrinsic type as expected by this runtime.
 pub type UncheckedExtrinsic =
-	generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, TxExtension>;
+	pallet_revive::evm::runtime::UncheckedExtrinsic<Address, Signature, EthExtraImpl>;
 
 /// The payload being signed in transactions.
 pub type SignedPayload = generic::SignedPayload<RuntimeCall, TxExtension>;
@@ -274,8 +303,14 @@ mod runtime {
 
 	// --- EVM ---
 
+	#[runtime::pallet_index(28)]
+	pub type EVMChainId = configs::evm::pallet_evm_chain_id;
+
 	#[runtime::pallet_index(30)]
 	pub type Precompiles = configs::evm::pallet_precompiles;
+
+	#[runtime::pallet_index(32)]
+	pub type Revive = pallet_revive;
 
 	// ---
 
@@ -297,7 +332,7 @@ impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for Run
 impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for Runtime where RuntimeCall: From<LocalCall>,
 {
 	fn create_bare(call: RuntimeCall) -> UncheckedExtrinsic {
-		UncheckedExtrinsic::new_bare(call)
+		generic::UncheckedExtrinsic::new_bare(call).into()
 	}
 }
 
@@ -306,7 +341,7 @@ impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 	type Extension = TxExtension;
 
 	fn create_transaction(call: RuntimeCall, extension: TxExtension) -> UncheckedExtrinsic {
-		UncheckedExtrinsic::new_transaction(call, extension)
+		generic::UncheckedExtrinsic::new_transaction(call, extension).into()
 	}
 }
 
@@ -324,6 +359,7 @@ impl<LocalCall> frame_system::offchain::CreateAuthorizedTransaction<LocalCall> f
 			frame_system::CheckWeight::<Runtime>::new(),
 			pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(0),
 			frame_metadata_hash_extension::CheckMetadataHash::<Runtime>::new(false),
+			pallet_revive::evm::tx_extension::SetOrigin::<Runtime>::default(),
 			frame_system::WeightReclaim::<Runtime>::new(),
 		)
 	}

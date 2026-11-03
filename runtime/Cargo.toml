@@ -38,6 +38,7 @@ pallet-preimage.workspace = true
 pallet-prime.workspace = true
 pallet-proxy.workspace = true
 pallet-referenda.workspace = true
+pallet-revive.workspace = true
 pallet-scheduler.workspace = true
 pallet-reward.workspace = true
 pallet-session.workspace = true
@@ -112,6 +113,7 @@ std = [
 	"pallet-prime/std",
 	"pallet-proxy/std",
 	"pallet-referenda/std",
+	"pallet-revive/std",
 	"pallet-scheduler/std",
 	"pallet-reward/std",
 	"pallet-session/std",
@@ -165,6 +167,7 @@ runtime-benchmarks = [
 	"pallet-prime/runtime-benchmarks",
 	"pallet-proxy/runtime-benchmarks",
 	"pallet-referenda/runtime-benchmarks",
+	"pallet-revive/runtime-benchmarks",
 	"pallet-scheduler/runtime-benchmarks",
 	"pallet-reward/runtime-benchmarks",
 	"pallet-session/runtime-benchmarks",
@@ -196,6 +199,7 @@ try-runtime = [
 	"pallet-prime/try-runtime",
 	"pallet-proxy/try-runtime",
 	"pallet-referenda/try-runtime",
+	"pallet-revive/try-runtime",
 	"pallet-scheduler/try-runtime",
 	"pallet-reward/try-runtime",
 	"pallet-session/try-runtime",

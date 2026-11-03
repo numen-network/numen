@@ -5,49 +5,19 @@
 mod common;
 
 use codec::Encode;
-use common::new_test_ext;
+use common::{new_test_ext, signed_immortal};
 use frame_support::traits::tokens::{fungible::Mutate, Preservation};
 use numen_runtime::{
 	check_nonce::CheckNonceKeepSigned, AccountId, Balances, Executive, Runtime, RuntimeCall,
-	SignedPayload, System, TxExtension, UncheckedExtrinsic, UNIT,
+	System, TxExtension, UncheckedExtrinsic, UNIT,
 };
-use sp_core::Pair;
 use sp_keyring::Sr25519Keyring;
-use sp_runtime::{
-	generic::Era,
-	traits::{TransactionExtension, TransactionExtensionMetadata},
-	MultiAddress, MultiSignature,
-};
+use sp_runtime::traits::{TransactionExtension, TransactionExtensionMetadata};
 
 const FUNDING: u128 = 1_000 * UNIT;
 
-fn extension(nonce: u32) -> TxExtension {
-	(
-		frame_system::AuthorizeCall::<Runtime>::new(),
-		frame_system::CheckNonZeroSender::<Runtime>::new(),
-		frame_system::CheckSpecVersion::<Runtime>::new(),
-		frame_system::CheckTxVersion::<Runtime>::new(),
-		frame_system::CheckGenesis::<Runtime>::new(),
-		frame_system::CheckEra::<Runtime>::from(Era::Immortal),
-		CheckNonceKeepSigned::<Runtime>::from(nonce),
-		frame_system::CheckWeight::<Runtime>::new(),
-		pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(0),
-		frame_metadata_hash_extension::CheckMetadataHash::<Runtime>::new(false),
-		frame_system::WeightReclaim::<Runtime>::new(),
-	)
-}
-
 fn remark(signer: Sr25519Keyring, nonce: u32) -> UncheckedExtrinsic {
-	let call = RuntimeCall::System(frame_system::Call::remark { remark: Vec::new() });
-	let payload = SignedPayload::new(call, extension(nonce)).expect("implicit data resolves");
-	let signature = payload.using_encoded(|bytes| signer.pair().sign(bytes));
-	let (call, extension, _) = payload.deconstruct();
-	UncheckedExtrinsic::new_signed(
-		call,
-		MultiAddress::Id(signer.to_account_id()),
-		MultiSignature::Sr25519(signature),
-		extension,
-	)
+	signed_immortal(signer, nonce, RuntimeCall::System(frame_system::Call::remark { remark: Vec::new() }))
 }
 
 #[test]
@@ -97,6 +67,7 @@ type PlainExtension = (
 	frame_system::CheckWeight<Runtime>,
 	pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
 	frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
+	pallet_revive::evm::tx_extension::SetOrigin<Runtime>,
 	frame_system::WeightReclaim<Runtime>,
 );
 
