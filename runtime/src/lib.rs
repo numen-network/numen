@@ -5,6 +5,7 @@
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 pub mod apis;
+pub mod balances_erc20;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
 pub mod check_nonce;

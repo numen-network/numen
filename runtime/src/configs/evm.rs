@@ -13,9 +13,6 @@ use crate::{
 	RuntimeHoldReason, RuntimeOrigin, Signature, Timestamp, MICRO_UNIT, MILLI_UNIT,
 };
 
-/// EVM slot the native balance ERC20 facade is mounted at.
-const BALANCES_ERC20: u16 = 0x802;
-
 /// Chain id of the dev, local and integration chains, and of any chain whose
 /// genesis sets none.
 pub const DEV_CHAIN_ID: u64 = 320_262;
@@ -87,7 +84,6 @@ impl pallet_evm_chain_id::Config for Runtime {}
 /// EVM facts the chain publishes for off chain readers.
 #[frame_support::pallet]
 pub mod pallet_precompiles {
-	use super::BALANCES_ERC20;
 	use sp_core::H160;
 
 	#[pallet::config]
@@ -104,9 +100,7 @@ pub mod pallet_precompiles {
 		/// rather than copied into each.
 		#[pallet::constant_name(BalancesErc20)]
 		pub fn balances_erc20() -> H160 {
-			let mut address = H160::zero();
-			address.0[18..].copy_from_slice(&BALANCES_ERC20.to_be_bytes());
-			address
+			crate::balances_erc20::ADDRESS
 		}
 	}
 }
@@ -123,7 +117,7 @@ impl pallet_revive::Config for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type WeightInfo = pallet_revive::weights::SubstrateWeight<Self>;
-	type Precompiles = ();
+	type Precompiles = (crate::balances_erc20::BalancesErc20,);
 	type FindAuthor = PowFindAuthor;
 	type DepositPerByte = DepositPerByte;
 	type DepositPerItem = DepositPerItem;

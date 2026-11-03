@@ -1,10 +1,9 @@
-// EVM -> Substrate withdrawal through the balances-erc20 precompile at 0x0802.
+// EVM -> Substrate withdrawal through the ERC20 token at 0x0802.
 //
 //   node withdraw-to-substrate.js
 //
-// Sends `amount` NUMN from Alith's mirror substrate account to a target
-// substrate AccountId32 by invoking
-// `withdraw(bytes32 dest, uint256 amount)` on the precompile.
+// Sends `amount` NUMN from Alith to a target substrate AccountId32 by
+// invoking `withdraw(bytes32 dest, uint256 amount)` on the token.
 //
 // Verification is EVM-side only (caller balance decreased and the
 // `Withdrawal(address,bytes32,uint256)` event matches). Substrate-side
