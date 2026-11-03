@@ -24,6 +24,7 @@ frame-system-rpc-runtime-api.workspace = true
 frame-system.workspace = true
 frame-try-runtime = { optional = true, workspace = true }
 hex-literal.workspace = true
+log.workspace = true
 pallet-authorship.workspace = true
 pallet-balances.workspace = true
 pallet-bounties.workspace = true
@@ -93,6 +94,7 @@ std = [
 	"codec/std",
 	"enumflags2/std",
 	"frame-benchmarking?/std",
+	"log/std",
 	"frame-executive/std",
 	"frame-metadata-hash-extension/std",
 	"frame-support/std",
