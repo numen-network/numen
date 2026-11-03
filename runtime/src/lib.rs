@@ -7,6 +7,7 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 pub mod apis;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
+pub mod check_nonce;
 pub mod configs;
 pub mod identity_info;
 pub mod inherent_checks;
@@ -90,10 +91,11 @@ pub const MICRO_UNIT: Balance = 1_000_000_000_000;
 
 /// Existential deposit.
 ///
-/// Zero keeps every account alive regardless of balance. Reaping an account
-/// resets its nonce, which would let a signed EVM transaction be replayed once
-/// the address is funded again.
-pub const EXISTENTIAL_DEPOSIT: Balance = 0;
+/// One plank, the least pallet-revive needs to give a contract account a
+/// provider. Reaping resets a nonce and would let signed transactions replay, so
+/// [`check_nonce::CheckNonceKeepSigned`] keeps every account that ever signed
+/// out of reach of it.
+pub const EXISTENTIAL_DEPOSIT: Balance = 1;
 
 /// Alias to 512-bit hash when used in the context of a transaction signature on the chain.
 pub type Signature = MultiSignature;
@@ -137,7 +139,7 @@ pub type TxExtension = (
 	frame_system::CheckTxVersion<Runtime>,
 	frame_system::CheckGenesis<Runtime>,
 	frame_system::CheckEra<Runtime>,
-	frame_system::CheckNonce<Runtime>,
+	check_nonce::CheckNonceKeepSigned<Runtime>,
 	frame_system::CheckWeight<Runtime>,
 	pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
 	frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
@@ -318,7 +320,7 @@ impl<LocalCall> frame_system::offchain::CreateAuthorizedTransaction<LocalCall> f
 			frame_system::CheckTxVersion::<Runtime>::new(),
 			frame_system::CheckGenesis::<Runtime>::new(),
 			frame_system::CheckEra::<Runtime>::from(generic::Era::Immortal),
-			frame_system::CheckNonce::<Runtime>::from(0),
+			check_nonce::CheckNonceKeepSigned::<Runtime>::from(0),
 			frame_system::CheckWeight::<Runtime>::new(),
 			pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(0),
 			frame_metadata_hash_extension::CheckMetadataHash::<Runtime>::new(false),
