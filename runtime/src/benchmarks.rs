@@ -13,7 +13,6 @@ frame_benchmarking::define_benchmarks!(
 	// never implement it. Upstream runtimes wire `()` here too.
 	[pallet_validator, Validator]
 	[pallet_im_online, ImOnline]
-	[pallet_evm, EVM]
 	// `pallet_treasury` stays out. Its payout benchmark spends a hardcoded
 	// 100 units, far below this chain's existential deposit, so the transfer
 	// can never succeed. Weights stay on the upstream values.

@@ -1,7 +1,6 @@
 //! pallet-vesting wired for the airdrop. A vested transfer locks the grant and
 //! releases it linearly per block. These pin the release curve, the completion
-//! that clears the lock, and the two ways funds might slip out early, through
-//! fees or through the Frontier EVM view.
+//! that clears the lock, and the lock holding firm against fees.
 
 mod common;
 
@@ -10,10 +9,8 @@ use frame_support::{
 	assert_noop, assert_ok,
 	traits::{tokens::fungible::Mutate, Currency, ExistenceRequirement, WithdrawReasons},
 };
-use numen_runtime::{AccountId, Balances, Runtime, RuntimeOrigin, System, Vesting, EVM, UNIT};
-use pallet_evm::AddressMapping;
+use numen_runtime::{AccountId, Balances, Runtime, RuntimeOrigin, System, Vesting, UNIT};
 use pallet_vesting::VestingInfo;
-use sp_core::{H160, U256};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::{traits::StaticLookup, TokenError};
 
@@ -126,26 +123,5 @@ fn fees_cannot_draw_on_the_locked_grant() {
 		let released = 50 * PER_BLOCK;
 		assert_noop!(fee(released + 1), pallet_balances::Error::<Runtime>::LiquidityRestrictions);
 		assert_ok!(fee(released));
-	});
-}
-
-#[test]
-fn evm_balance_view_excludes_locked_vesting() {
-	new_test_ext().execute_with(|| {
-		let alice = Sr25519Keyring::Alice.to_account_id();
-		let holder_addr = H160::repeat_byte(0x42);
-		let holder = <Runtime as pallet_evm::Config>::AddressMapping::into_account_id(holder_addr);
-		airdrop_to(&alice, &holder);
-
-		// Frontier reads spendable balance, so the fully locked grant is
-		// invisible to the EVM even though the account holds it.
-		let (account, _) = EVM::account_basic(&holder_addr);
-		assert_eq!(account.balance, U256::zero(), "locked funds must not be EVM spendable");
-
-		// Realizing the elapsed share lifts exactly that much into EVM view.
-		System::set_block_number(START + 50);
-		assert_ok!(Vesting::vest_other(RuntimeOrigin::signed(alice), src(&holder)));
-		let (account, _) = EVM::account_basic(&holder_addr);
-		assert_eq!(account.balance, U256::from(50 * PER_BLOCK));
 	});
 }
