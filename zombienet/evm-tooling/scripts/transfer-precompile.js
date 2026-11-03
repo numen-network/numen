@@ -1,15 +1,13 @@
-// Native NUMN transfer through the ERC20 precompile at 0x0802.
+// Native NUMN transfer through the ERC20 token at 0x0802.
 //
 //   node transfer-precompile.js
 //
 // Defaults: Alith -> Baltathar, 1.5 NUMN, RPC at 127.0.0.1:9944.
 //
 // Unlike `transfer-ethers.js` (which submits a vanilla EVM value tx), this
-// script invokes `transfer(address,uint256)` on the
-// `pallet-evm-precompile-balances-erc20` precompile. The on-chain effect is
-// identical (native balance moves between mirror substrate accounts), but
-// the call path proves that wallets / contracts treating NUMN as ERC20 work
-// against the chain.
+// script invokes `transfer(address,uint256)` on the token. The native
+// balance moves the same way, but the call path proves that wallets and
+// contracts treating NUMN as ERC20 work against the chain.
 
 const { JsonRpcProvider, Wallet, Contract, formatEther, parseEther } = require("ethers");
 

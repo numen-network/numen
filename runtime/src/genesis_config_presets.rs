@@ -1,15 +1,19 @@
 use crate::{
+	balances_erc20,
 	configs::{evm::DEV_CHAIN_ID, FEE_ANCHOR},
 	AccountId, BalancesConfig, DifficultyConfig, EVMChainIdConfig,
-	GenesisRegistrarsConfig, PrimeConfig, Runtime, RuntimeGenesisConfig, SessionConfig,
-	SessionKeys, TransactionPaymentConfig, ValidatorConfig, UNIT,
+	GenesisRegistrarsConfig, PrimeConfig, ReviveConfig, Runtime, RuntimeGenesisConfig,
+	SessionConfig, SessionKeys, TransactionPaymentConfig, ValidatorConfig, UNIT,
 };
 use alloc::{vec, vec::Vec};
 use frame_support::build_struct_json_patch;
 use pallet_transaction_payment::Multiplier;
 use hex_literal::hex;
 use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
-use pallet_revive::{AccountId32Mapper, AddressMapper};
+use pallet_revive::{
+	genesis::{Account, ContractData},
+	AccountId32Mapper, AddressMapper,
+};
 use serde_json::Value;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{crypto::UncheckedInto, H160, U256};
@@ -158,6 +162,17 @@ fn genesis_patch(
 			multiplier: Multiplier::saturating_from_integer(FEE_ANCHOR),
 		},
 		evm_chain_id: EVMChainIdConfig { chain_id },
+		revive: ReviveConfig {
+			accounts: vec![Account::<Runtime> {
+				address: balances_erc20::ADDRESS,
+				balance: U256::zero(),
+				nonce: 0,
+				contract_data: Some(ContractData {
+					code: balances_erc20::proxy_code().into(),
+					storage: Default::default(),
+				}),
+			}],
+		},
 	})
 }
 

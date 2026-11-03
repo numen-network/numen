@@ -85,14 +85,14 @@ The same flow is automated by [`scripts/transfer-ethers.js`](scripts/transfer-et
 
 If any step fails, capture the MetaMask "Activity → Speed up / Cancel" detail panel and the dev-node log; both are required for a useful bug report.
 
-## Native NUMN as ERC20 (precompile `0x0802`)
+## Native NUMN as ERC20 (`0x0802`)
 
-The runtime exposes the native balance pallet through an ERC20-shaped precompile at `0x0000000000000000000000000000000000000802` (`pallet-evm-precompile-balances-erc20`). It serves two purposes:
+The native balance is also an ERC20 token at `0x0000000000000000000000000000000000000802`. A proxy contract at that address delegatecalls into a pallet-revive precompile, so the token answers at the address wallets and contracts already hold. It serves two purposes:
 
-1. **EVM-native NUMN as ERC20** — `name` / `symbol` / `decimals` / `totalSupply` / `balanceOf` / `transfer` / `transferFrom` / `approve` / `allowance` are routed straight to `pallet-balances`. Wallets and contracts can therefore handle native NUMN through the same ERC20 tooling they already use.
-2. **EVM → Substrate bridge** — the non-standard `withdraw(bytes32 dest, uint256 amount)` selector moves `amount` from the caller's mirror substrate account to the substrate `AccountId32` given by `dest`, emitting `Withdrawal(address,bytes32,uint256)`. This is the supported way to move funds **back from the EVM side to a pure substrate account** (e.g. Alice / Bob / sudo) — a vanilla EVM `value` transfer cannot reach an `AccountId32` that has no `H160` preimage.
+1. **EVM-native NUMN as ERC20.** `name`, `symbol`, `decimals`, `totalSupply`, `balanceOf`, `transfer`, `transferFrom`, `approve` and `allowance` go straight to `pallet-balances`, so wallets and contracts handle native NUMN through the ERC20 tooling they already use. `balanceOf` reports the same spendable balance as `eth_getBalance`.
+2. **EVM to substrate withdrawal.** The non-standard `withdraw(bytes32 dest, uint256 amount)` moves `amount` from the caller to the substrate `AccountId32` given by `dest` and emits `Withdrawal(address,bytes32,uint256)`. It pays a substrate account by its `AccountId32` without looking up the account's H160 first.
 
-The Rust end-to-end coverage lives in [`runtime/tests/evm.rs`](../../runtime/tests/evm.rs) (`balances_erc20_precompile_balance_of_and_transfer_via_runner`). The JavaScript counterparts that drive the precompile through the live JSON-RPC are:
+The Rust coverage lives in [`runtime/tests/balances_erc20.rs`](../../runtime/tests/balances_erc20.rs). The JavaScript counterparts that drive the token through the live JSON-RPC are:
 
 | Path                                                                                                             | What it covers                                                 |
 | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -103,4 +103,4 @@ The Rust end-to-end coverage lives in [`runtime/tests/evm.rs`](../../runtime/tes
 
 ### MetaMask: import native NUMN as a token
 
-In MetaMask: **Tokens → Import tokens → Custom token**, paste `0x0000000000000000000000000000000000000802`. Symbol auto-fills as `NUMN`, decimals as `18`. The reported balance now mirrors the same account's `eth_getBalance`, and `Send` constructs an ERC20 `transfer(address,uint256)` against the precompile instead of a value transaction. Withdrawing to a substrate account requires constructing the `withdraw` calldata manually (e.g. through Etherscan-style "interact with contract" dialogs); the canonical example is in `scripts/withdraw-to-substrate.js`.
+In MetaMask: **Tokens → Import tokens → Custom token**, paste `0x0000000000000000000000000000000000000802`. Symbol auto-fills as `NUMN`, decimals as `18`. The reported balance now mirrors the same account's `eth_getBalance`, and `Send` constructs an ERC20 `transfer(address,uint256)` against the token instead of a value transaction. Withdrawing to a substrate account requires constructing the `withdraw` calldata manually (e.g. through Etherscan-style "interact with contract" dialogs); the canonical example is in `scripts/withdraw-to-substrate.js`.
