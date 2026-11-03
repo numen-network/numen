@@ -26,6 +26,7 @@ const FUNDING: u128 = 5_000 * UNIT;
 
 fn immortal_extension(nonce: u32) -> TxExtension {
 	(
+		frame_system::AuthorizeCall::<Runtime>::new(),
 		frame_system::CheckNonZeroSender::<Runtime>::new(),
 		frame_system::CheckSpecVersion::<Runtime>::new(),
 		frame_system::CheckTxVersion::<Runtime>::new(),
