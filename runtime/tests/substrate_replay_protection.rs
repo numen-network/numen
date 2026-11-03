@@ -1,9 +1,10 @@
 // Replay protection for signed Substrate extrinsics.
 //
-// A zero existential deposit keeps a drained account in state, so its nonce
-// never rewinds to zero. Here the sender empties itself with `transfer_all` yet
-// keeps its nonce, so `CheckNonce` rejects the same immortal extrinsic as stale
-// once the address holds funds again.
+// An account keeps a provider of its own from its first signed transaction, so
+// a drain leaves it in state and its nonce never rewinds to zero. Here the
+// sender empties itself with `transfer_all` yet keeps its nonce, so the nonce
+// check rejects the same immortal extrinsic as stale once the address holds
+// funds again.
 
 mod common;
 
@@ -32,7 +33,7 @@ fn immortal_extension(nonce: u32) -> TxExtension {
 		frame_system::CheckTxVersion::<Runtime>::new(),
 		frame_system::CheckGenesis::<Runtime>::new(),
 		frame_system::CheckEra::<Runtime>::from(Era::Immortal),
-		frame_system::CheckNonce::<Runtime>::from(nonce),
+		numen_runtime::check_nonce::CheckNonceKeepSigned::<Runtime>::from(nonce),
 		frame_system::CheckWeight::<Runtime>::new(),
 		pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(0),
 		frame_metadata_hash_extension::CheckMetadataHash::<Runtime>::new(false),

@@ -440,7 +440,7 @@ impl pallet_proxy::Config for Runtime {
 
 parameter_types! {
 	/// A grant small enough to fall under this is not worth the storage a
-	/// schedule costs. One NUMN is a million times the existential deposit.
+	/// schedule costs.
 	pub const MinVestedTransfer: Balance = UNIT;
 	/// `pallet-balances` folds every lock into one frozen figure and drops the
 	/// reasons each carries, so this set buys no exemption whatever it holds.
