@@ -2,13 +2,16 @@
 # h160-to-ss58.sh
 #
 # Convert an Ethereum H160 address to the Substrate AccountId32 / SS58 address
-# pallet-revive's `AccountId32Mapper` resolves it to.
+# pallet-revive's `AccountId32Mapper` resolves it to, and to the account
+# Frontier kept its funds at.
 #
-# Mapping rule:
+# Mapping rules:
 #     account32 = h160_bytes ++ 0xEE * 12
+#     frontier  = blake2_256("evm:" ++ h160_bytes)
 #
 # An H160 that belongs to a substrate account resolves to that account
-# instead, which only the chain knows.
+# instead, which only the chain knows. Funds still at the Frontier account
+# move over with `EvmClaims.claim`.
 #
 # Default SS58 prefix: 14240 (this runtime's `SS58Prefix`).
 #
@@ -35,21 +38,26 @@ if [[ ! "$H160_RAW" =~ ^[0-9a-fA-F]{40}$ ]]; then
 fi
 
 PUBKEY_HEX="${H160_RAW,,}eeeeeeeeeeeeeeeeeeeeeeee"
+FRONTIER_HEX=$(python3 - "$H160_RAW" <<'PY'
+import sys, hashlib
+h160 = bytes.fromhex(sys.argv[1])
+print(hashlib.blake2b(b"evm:" + h160, digest_size=32).hexdigest())
+PY
+)
 
-echo "H160:               0x${H160_RAW,,}"
-echo "AccountId32 (hex):  0x${PUBKEY_HEX}"
-
-if command -v subkey >/dev/null 2>&1; then
-    SS58=$(subkey inspect --network "${SS58_PREFIX}" "0x${PUBKEY_HEX}" 2>/dev/null \
-        | awk -F': *' '/SS58 Address/ {print $2; exit}')
-    if [[ -n "${SS58:-}" ]]; then
-        echo "SS58 (prefix=${SS58_PREFIX}): ${SS58}"
-        exit 0
+ss58() {
+    if command -v subkey >/dev/null 2>&1; then
+        local address
+        address=$(subkey inspect --network "${SS58_PREFIX}" "0x$1" 2>/dev/null \
+            | awk -F': *' '/SS58 Address/ {print $2; exit}')
+        if [[ -n "${address:-}" ]]; then
+            echo "$address"
+            return
+        fi
     fi
-fi
 
-# Fallback: derive SS58 in pure Python (no subkey required).
-python3 - "$PUBKEY_HEX" "$SS58_PREFIX" <<'PY'
+    # Fallback: derive SS58 in pure Python (no subkey required).
+    python3 - "$1" "$SS58_PREFIX" <<'PY'
 import sys, hashlib
 
 PUBKEY = bytes.fromhex(sys.argv[1])
@@ -80,5 +88,13 @@ for b in raw:
         out.append(ALPHABET[0])
     else:
         break
-print(f"SS58 (prefix={PREFIX}): {out[::-1].decode()}")
+print(out[::-1].decode())
 PY
+}
+
+printf '%-26s%s\n' \
+    "H160:" "0x${H160_RAW,,}" \
+    "AccountId32 (hex):" "0x${PUBKEY_HEX}" \
+    "SS58 (prefix=${SS58_PREFIX}):" "$(ss58 "$PUBKEY_HEX")" \
+    "Frontier account (hex):" "0x${FRONTIER_HEX}" \
+    "Frontier SS58:" "$(ss58 "$FRONTIER_HEX")"

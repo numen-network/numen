@@ -313,6 +313,9 @@ mod runtime {
 	#[runtime::pallet_index(32)]
 	pub type Revive = pallet_revive;
 
+	#[runtime::pallet_index(33)]
+	pub type EvmClaims = pallet_evm_claims;
+
 	// ---
 
 	#[runtime::pallet_index(31)]
