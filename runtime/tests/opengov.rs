@@ -23,7 +23,7 @@ use numen_runtime::{
 use sp_core::traits::{Externalities, ReadRuntimeVersion, ReadRuntimeVersionExt};
 use sp_io::TestExternalities;
 use sp_keyring::Sr25519Keyring;
-use sp_runtime::DispatchError;
+use sp_runtime::{traits::Hash, DispatchError};
 use sp_version::RuntimeVersion;
 
 /// Small tier funding cap. A referendum on the small track releases at most this.
@@ -309,9 +309,11 @@ fn the_upgrade_track_replaces_runtime_code() {
 	ext_accepting_an_upgrade().execute_with(|| {
 		let track = RuntimeOrigin::from(pallet_custom_origins::Origin::RuntimeUpgrade);
 
-		assert_ok!(Prime::upgrade(track, b"a new runtime".to_vec()));
+		let code = b"a new runtime".to_vec();
+		assert_ok!(Prime::upgrade(track, code.clone()));
 
-		System::assert_has_event(frame_system::Event::CodeUpdated.into());
+		let hash = <Runtime as frame_system::Config>::Hashing::hash(&code);
+		System::assert_has_event(frame_system::Event::CodeUpdated { hash }.into());
 	});
 }
 

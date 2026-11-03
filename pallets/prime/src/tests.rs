@@ -1,6 +1,6 @@
 use crate::{mock::*, EnsurePrime, Error, Event, Key};
 use frame_support::{assert_noop, assert_ok, traits::EnsureOrigin};
-use sp_runtime::{BuildStorage, DispatchError};
+use sp_runtime::{traits::Hash, BuildStorage, DispatchError};
 use sp_version::RuntimeVersion;
 
 fn upgrade_version(spec_version: u32) -> RuntimeVersion {
@@ -34,8 +34,10 @@ fn empty_key_rejects_everyone() {
 #[test]
 fn upgrade_replaces_runtime_code() {
 	new_test_ext_with_version(upgrade_version(2)).execute_with(|| {
-		assert_ok!(Prime::upgrade(RuntimeOrigin::signed(PRIME), vec![1, 2, 3]));
-		System::assert_has_event(frame_system::Event::CodeUpdated.into());
+		let code = vec![1, 2, 3];
+		assert_ok!(Prime::upgrade(RuntimeOrigin::signed(PRIME), code.clone()));
+		let hash = <Test as frame_system::Config>::Hashing::hash(&code);
+		System::assert_has_event(frame_system::Event::CodeUpdated { hash }.into());
 	});
 }
 

@@ -282,7 +282,7 @@ pub fn new_full<
 		);
 	net_config.add_notification_protocol(grandpa_protocol_config);
 
-	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
+	let (network, system_rpc_tx, tx_handler_controller, sync_service, _bitswap_handle) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
 			net_config,
@@ -295,6 +295,7 @@ pub fn new_full<
 			warp_sync_config: None,
 			block_relay: None,
 			metrics,
+			gap_sync_body_policy: None,
 		})?;
 
 	if config.offchain_worker.enabled {

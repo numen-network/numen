@@ -700,7 +700,7 @@ where
 		Ok(())
 	}
 
-	fn is_known_offence(_offenders: &[(AccountId, ())], _time_slot: &O::TimeSlot) -> bool {
+	fn is_known_offence(_offenders: &[(AccountId, ())], _time_slot: &O::Slot) -> bool {
 		false
 	}
 }
@@ -735,7 +735,7 @@ where
 		Ok(())
 	}
 
-	fn is_known_offence(_offenders: &[(AccountId, ())], _time_slot: &O::TimeSlot) -> bool {
+	fn is_known_offence(_offenders: &[(AccountId, ())], _time_slot: &O::Slot) -> bool {
 		false
 	}
 }
@@ -749,7 +749,7 @@ impl pallet_im_online::Config for Runtime {
 	type UnsignedPriority = ImOnlineUnsignedPriority;
 	type MaxKeys = ImOnlineMaxKeys;
 	type MaxPeerInHeartbeats = ImOnlineMaxPeerInHeartbeats;
-	type WeightInfo = crate::weights::pallet_im_online::WeightInfo<Runtime>;
+	type WeightInfo = pallet_im_online::weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {
@@ -809,7 +809,7 @@ impl pallet_bounties::Config for Runtime {
 	type BountyValueMinimum = BountyValueMinimum;
 	type DataDepositPerByte = DataDepositPerByte;
 	type MaximumReasonLength = MaximumReasonLength;
-	type WeightInfo = crate::weights::pallet_bounties::WeightInfo<Runtime>;
+	type WeightInfo = pallet_bounties::weights::SubstrateWeight<Runtime>;
 	type ChildBountyManager = ChildBounties;
 	type OnSlash = Treasury;
 	type TransferAllAssets = ();
