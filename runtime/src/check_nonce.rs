@@ -1,8 +1,9 @@
-//! Nonce check that keeps every account that ever signed alive.
+//! Nonce check that keeps every account that ever signed alive. It starts an
+//! Ethereum signer from the nonce its H160 reached under Frontier.
 
 use alloc::vec::Vec;
 use codec::{Decode, DecodeWithMemTracking, Encode};
-use frame_support::{dispatch::DispatchInfo, weights::Weight};
+use frame_support::{dispatch::DispatchInfo, traits::Get, weights::Weight};
 use sp_runtime::{
 	traits::{
 		AsSystemOriginSigner, DispatchInfoOf, Dispatchable, Implication, PostDispatchInfoOf,
@@ -26,6 +27,10 @@ type InnerPre<T> =
 /// that signed once outlives a drain and its nonce keeps counting. Encoding,
 /// identifier and type information are those of the wrapped check, so signers
 /// and metadata readers see no difference.
+///
+/// An Ethereum signer's first transaction under pallet-revive is checked against
+/// the nonce its H160 reached under Frontier. The transactions Frontier ran for
+/// it thus stay spent, claimed or not.
 #[derive(Encode, Decode, DecodeWithMemTracking, Clone, Eq, PartialEq)]
 pub struct CheckNonceKeepSigned<T: frame_system::Config>(pub Inner<T>);
 
@@ -49,7 +54,7 @@ impl<T: frame_system::Config> core::fmt::Debug for CheckNonceKeepSigned<T> {
 	}
 }
 
-impl<T: frame_system::Config> TransactionExtension<T::RuntimeCall> for CheckNonceKeepSigned<T>
+impl<T: pallet_evm_claims::Config> TransactionExtension<T::RuntimeCall> for CheckNonceKeepSigned<T>
 where
 	T::RuntimeCall: Dispatchable<Info = DispatchInfo>,
 	<T::RuntimeCall as Dispatchable>::RuntimeOrigin: AsSystemOriginSigner<T::AccountId> + Clone,
@@ -64,7 +69,7 @@ where
 	}
 
 	fn weight(&self, call: &T::RuntimeCall) -> Weight {
-		self.0.weight(call)
+		self.0.weight(call).saturating_add(T::DbWeight::get().reads(1))
 	}
 
 	fn validate(
@@ -78,6 +83,11 @@ where
 		source: TransactionSource,
 	) -> ValidateResult<Self::Val, T::RuntimeCall> {
 		let signer = origin.as_system_origin_signer().cloned();
+		// Writes here vanish with the pool's validation overlay. In a block they
+		// are the lift itself, made before the wrapped check reads the nonce.
+		if let Some(who) = &signer {
+			pallet_evm_claims::Pallet::<T>::lift_nonce(who);
+		}
 		let (validity, val, origin) =
 			self.0.validate(origin, call, info, len, self_implicit, inherited_implication, source)?;
 		Ok((validity, (signer, val), origin))

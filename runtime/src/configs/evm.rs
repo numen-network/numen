@@ -1,16 +1,20 @@
 //! EVM configuration.
 
+use codec::Encode;
 use frame_support::{
+	dispatch::GetDispatchInfo,
 	parameter_types,
 	traits::{ConstBool, ConstU32, Get},
 };
-use frame_system::EnsureSigned;
+use frame_system::{offchain::CreateAuthorizedTransaction, EnsureSigned};
+use sp_core::H160;
 use sp_runtime::{FixedU128, Perbill};
 
 use super::{DealWithFees, PowFindAuthor};
 use crate::{
 	AccountId, Address, Balance, Balances, EthExtraImpl, Runtime, RuntimeCall, RuntimeEvent,
-	RuntimeHoldReason, RuntimeOrigin, Signature, Timestamp, MICRO_UNIT, MILLI_UNIT,
+	RuntimeHoldReason, RuntimeOrigin, Signature, Timestamp, TransactionPayment, MICRO_UNIT,
+	MILLI_UNIT,
 };
 
 /// Chain id of the dev, local and integration chains, and of any chain whose
@@ -31,7 +35,7 @@ parameter_types! {
 	pub MaxEthExtrinsicWeight: FixedU128 = FixedU128::from_rational(9, 10);
 	/// Splits the fee of an Ethereum transaction into gas and gas price, sized
 	/// so a native transfer stays within the 21,000 gas wallets assume for it.
-	pub const GasScale: u32 = 351_000_000;
+	pub const GasScale: u32 = 360_000_000;
 }
 
 /// Chain id EVM signatures commit to, read from [`pallet_evm_chain_id`] so that
@@ -106,6 +110,28 @@ pub mod pallet_precompiles {
 }
 
 impl pallet_precompiles::Config for Runtime {}
+
+/// What a claim costs, the fee a signed transaction of its weight and length
+/// would pay.
+pub struct ClaimFee;
+
+impl Get<Balance> for ClaimFee {
+	fn get() -> Balance {
+		let call = RuntimeCall::EvmClaims(pallet_evm_claims::Call::claim { address: H160::zero() });
+		let info = call.get_dispatch_info();
+		let len = <Runtime as CreateAuthorizedTransaction<RuntimeCall>>::create_authorized_transaction(
+			call,
+		)
+		.encoded_size();
+		TransactionPayment::compute_fee(len as u32, &info, 0)
+	}
+}
+
+impl pallet_evm_claims::Config for Runtime {
+	type ClaimFee = ClaimFee;
+	type OnClaimFee = DealWithFees;
+	type WeightInfo = pallet_evm_claims::weights::SubstrateWeight<Runtime>;
+}
 
 impl pallet_revive::Config for Runtime {
 	type Time = Timestamp;
