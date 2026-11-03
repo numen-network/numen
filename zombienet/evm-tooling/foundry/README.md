@@ -46,4 +46,4 @@ cast call $TOKEN "balanceOf(address)(uint256)" $BALTATHAR --rpc-url numen
 
 ## Pre-funded accounts
 
-See [`../README.md`](../README.md) for the full address / private-key table. The dev / local_testnet / integration genesis presets pre-fund six standard Frontier dev ECDSA accounts (Alith, Baltathar, Charleth, Dorothy, Ethan, Faith). They MUST NOT be used in any non-development network.
+See [`../README.md`](../README.md) for the full address / private-key table. The dev / local_testnet / integration genesis presets pre-fund the six well-known Ethereum dev accounts (Alith, Baltathar, Charleth, Dorothy, Ethan, Faith). They MUST NOT be used in any non-development network.

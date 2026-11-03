@@ -12,6 +12,8 @@ The node binary doubles as the bench host through its `benchmark pallet` subcomm
 
 One command produces both artefacts. The production profile matters since release binaries ship with it and weights must measure that same wasm.
 
+The pallet-revive benchmarks run contract fixtures compiled during the build, so `solc` and `resolc` have to be on `PATH`. CI skips the fixtures with `SKIP_PALLET_REVIVE_FIXTURES=1`, which a weight build must not set.
+
 ```bash
 cargo build --profile production --locked -p numen --features runtime-benchmarks
 ```

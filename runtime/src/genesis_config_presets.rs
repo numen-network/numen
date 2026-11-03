@@ -1,16 +1,18 @@
 use crate::{
-	configs::FEE_ANCHOR, AccountId, BalancesConfig, DifficultyConfig, GenesisRegistrarsConfig,
-	PrimeConfig, RuntimeGenesisConfig, SessionConfig, SessionKeys, TransactionPaymentConfig,
-	ValidatorConfig, UNIT,
+	configs::{evm::DEV_CHAIN_ID, FEE_ANCHOR},
+	AccountId, BalancesConfig, DifficultyConfig, EVMChainIdConfig,
+	GenesisRegistrarsConfig, PrimeConfig, Runtime, RuntimeGenesisConfig, SessionConfig,
+	SessionKeys, TransactionPaymentConfig, ValidatorConfig, UNIT,
 };
 use alloc::{vec, vec::Vec};
 use frame_support::build_struct_json_patch;
 use pallet_transaction_payment::Multiplier;
 use hex_literal::hex;
 use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
+use pallet_revive::{AccountId32Mapper, AddressMapper};
 use serde_json::Value;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
-use sp_core::{crypto::UncheckedInto, U256};
+use sp_core::{crypto::UncheckedInto, H160, U256};
 use sp_genesis_builder::{self, PresetId};
 use sp_runtime::FixedPointNumber;
 use sp_keyring::{Ed25519Keyring, Sr25519Keyring};
@@ -22,6 +24,20 @@ const INITIAL_DIFFICULTY: u32 = 1_000;
 const MAIN_INITIAL_DIFFICULTY: u32 = 1_000_000;
 
 const DEV_ACCOUNT_BALANCE: u128 = 1_000_000 * UNIT;
+
+const TEST_EVM_CHAIN_ID: u64 = 320261;
+const MAIN_EVM_CHAIN_ID: u64 = 32026;
+
+/// Alith, Baltathar, Charleth, Dorothy, Ethan and Faith, the dev keys EVM
+/// tooling ships with.
+const DEV_EVM_ACCOUNTS: [[u8; 20]; 6] = [
+	hex!("f24ff3a9cf04c71dbc94d0b566f7a27b94566cac"),
+	hex!("3cd0a705a2dc65e5b1e1205896baa2be8a07c6e0"),
+	hex!("798d4ba9baf0064ec19eb4f0a1a45785ae9d6dfc"),
+	hex!("773539d4ac0e786233d90a233654ccee26a613d9"),
+	hex!("ff64d3f6efe2317ee2807d223a0bdc4c0c49dfdb"),
+	hex!("c0f0f4ab324c46e55d02d0033343b4be8a55532d"),
+];
 
 fn dev_validators() -> Vec<(AccountId, GrandpaId, ImOnlineId)> {
 	vec![
@@ -78,6 +94,11 @@ fn dev_balances() -> Vec<(AccountId, u128)> {
 		(Sr25519Keyring::Ferdie .to_account_id(), DEV_ACCOUNT_BALANCE),
 		(crate::configs::TreasuryAccount::get(), GENESIS_TREASURY_ISSUANCE)
 	]
+	.into_iter()
+	.chain(DEV_EVM_ACCOUNTS.iter().map(|address| {
+		(AccountId32Mapper::<Runtime>::to_fallback_account_id(&H160(*address)), DEV_ACCOUNT_BALANCE)
+	}))
+	.collect()
 }
 
 fn live_balances() -> Vec<(AccountId, u128)> {
@@ -111,6 +132,7 @@ fn genesis_patch(
 	prime_key: Option<AccountId>,
 	registrars: Vec<AccountId>,
 	validators: Vec<(AccountId, GrandpaId, ImOnlineId)>,
+	chain_id: u64,
 	initial_difficulty: U256
 ) -> Value {
 
@@ -135,6 +157,7 @@ fn genesis_patch(
 		transaction_payment: TransactionPaymentConfig {
 			multiplier: Multiplier::saturating_from_integer(FEE_ANCHOR),
 		},
+		evm_chain_id: EVMChainIdConfig { chain_id },
 	})
 }
 
@@ -145,6 +168,7 @@ pub fn development_config_genesis() -> Value {
 		Some(Sr25519Keyring::Alice.to_account_id()),
 		dev_registrars(),
 		dev_validators(),
+		DEV_CHAIN_ID,
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -155,6 +179,7 @@ pub fn local_config_genesis() -> Value {
 		Some(Sr25519Keyring::Alice.to_account_id()),
 		dev_registrars(),
 		dev_validators(),
+		DEV_CHAIN_ID,
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -165,6 +190,7 @@ pub fn integration_config_genesis() -> Value {
 		Some(Sr25519Keyring::Alice.to_account_id()),
 		dev_registrars(),
 		dev_validators(),
+		DEV_CHAIN_ID,
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -175,6 +201,7 @@ pub fn testnet_config_genesis() -> Value {
 		Some(PRIME.into()),
 		live_registrars(),
 		testnet_validators(),
+		TEST_EVM_CHAIN_ID,
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -185,6 +212,7 @@ pub fn mainnet_config_genesis() -> Value {
 		Some(PRIME.into()),
 		live_registrars(),
 		live_validators(),
+		MAIN_EVM_CHAIN_ID,
 		MAIN_INITIAL_DIFFICULTY.into()
 	)
 }

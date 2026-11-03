@@ -45,7 +45,7 @@ jobs:
         run: SKIP_WASM_BUILD=1 cargo clippy --all-targets --locked --workspace --quiet -- -D warnings
         timeout-minutes: 30
       - name: Run clippy (runtime-benchmarks)
-        run: SKIP_WASM_BUILD=1 cargo clippy --all-targets --locked --workspace --features runtime-benchmarks --quiet -- -D warnings
+        run: SKIP_WASM_BUILD=1 SKIP_PALLET_REVIVE_FIXTURES=1 cargo clippy --all-targets --locked --workspace --features runtime-benchmarks --quiet -- -D warnings
         timeout-minutes: 30
 
   test:
@@ -61,7 +61,7 @@ jobs:
         run: SKIP_WASM_BUILD=1 cargo test --workspace --locked
         timeout-minutes: 30
       - name: Run tests (runtime-benchmarks)
-        run: SKIP_WASM_BUILD=1 cargo test --workspace --locked --features runtime-benchmarks
+        run: SKIP_WASM_BUILD=1 SKIP_PALLET_REVIVE_FIXTURES=1 cargo test --workspace --locked --features runtime-benchmarks
         timeout-minutes: 30
 
   weights:

@@ -9,7 +9,7 @@ pub const MAX_TIMESTAMP_DRIFT_MS: u64 = 2_000;
 /// Anything else yields `None`, leaving the block with no clock for its difficulty.
 pub fn timestamp_from_inherent(encoded: &[u8]) -> Option<u64> {
 	let extrinsic = UncheckedExtrinsic::decode(&mut &encoded[..]).ok()?;
-	match extrinsic.function {
+	match extrinsic.0.function {
 		RuntimeCall::Timestamp(pallet_timestamp::Call::set { now }) => Some(now),
 		_ => None,
 	}
@@ -45,18 +45,19 @@ mod tests {
 	use super::*;
 	use codec::Encode;
 	use sp_inherents::CheckInherentsResult;
+	use sp_runtime::generic;
 
 	#[test]
 	fn reads_a_timestamp_inherent() {
 		let call = RuntimeCall::Timestamp(pallet_timestamp::Call::set { now: 123_000 });
-		let extrinsic = UncheckedExtrinsic::new_bare(call);
+		let extrinsic: UncheckedExtrinsic = generic::UncheckedExtrinsic::new_bare(call).into();
 		assert_eq!(timestamp_from_inherent(&extrinsic.encode()), Some(123_000));
 	}
 
 	#[test]
 	fn rejects_a_call_that_is_not_the_timestamp() {
 		let call = RuntimeCall::System(frame_system::Call::remark { remark: Default::default() });
-		let extrinsic = UncheckedExtrinsic::new_bare(call);
+		let extrinsic: UncheckedExtrinsic = generic::UncheckedExtrinsic::new_bare(call).into();
 		assert_eq!(timestamp_from_inherent(&extrinsic.encode()), None);
 	}
 

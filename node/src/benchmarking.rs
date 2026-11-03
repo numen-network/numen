@@ -123,6 +123,7 @@ pub fn create_benchmark_extrinsic(
 		frame_system::CheckWeight::<runtime::Runtime>::new(),
 		pallet_transaction_payment::ChargeTransactionPayment::<runtime::Runtime>::from(0),
 		frame_metadata_hash_extension::CheckMetadataHash::<runtime::Runtime>::new(false),
+		pallet_revive::evm::tx_extension::SetOrigin::<runtime::Runtime>::default(),
 		frame_system::WeightReclaim::<runtime::Runtime>::new(),
 	);
 
@@ -141,16 +142,18 @@ pub fn create_benchmark_extrinsic(
 			(),
 			None,
 			(),
+			(),
 		),
 	);
 	let signature = raw_payload.using_encoded(|e| sender.sign(e));
 
-	runtime::UncheckedExtrinsic::new_signed(
+	sp_runtime::generic::UncheckedExtrinsic::new_signed(
 		call,
 		sp_runtime::AccountId32::from(sender.public()).into(),
 		runtime::Signature::Sr25519(signature),
 		tx_ext,
 	)
+	.into()
 }
 
 /// Generates inherent data for the `benchmark overhead` command.
