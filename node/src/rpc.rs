@@ -59,6 +59,12 @@ pub struct FullDeps<C, P, B> {
 	pub grandpa: GrandpaDeps<B>,
 	/// External mining dependencies, present when the operator exposes the RPC.
 	pub mining: Option<MiningDeps>,
+	/// Servers that answer the Ethereum JSON-RPC methods, when the node serves
+	/// them.
+	pub eth_rpc: Option<crate::service::EthRpcConfig>,
+	/// Response size limit of the node's RPC server in bytes. The Ethereum
+	/// forwarder caps its upstream answers at the same size.
+	pub max_response_size: u32,
 }
 
 /// Instantiate all full RPC extensions.
@@ -81,7 +87,7 @@ where
 	use substrate_frame_rpc_system::{System, SystemApiServer};
 
 	let mut module = RpcModule::new(());
-	let FullDeps { client, pool, grandpa, mining } = deps;
+	let FullDeps { client, pool, grandpa, mining, eth_rpc, max_response_size } = deps;
 	let GrandpaDeps {
 		shared_voter_state,
 		shared_authority_set,
@@ -106,6 +112,14 @@ where
 	if let Some(MiningDeps { handle, miner, protocol }) = mining {
 		use crate::mining_rpc::{Mining, MiningApiServer};
 		module.merge(Mining::new(handle, miner, protocol).into_rpc())?;
+	}
+
+	if let Some(crate::service::EthRpcConfig { eth_rpc, frozen }) = eth_rpc {
+		use crate::eth_forward::{ClientChain, EthForward};
+		let chain = ClientChain(client.clone());
+		module.merge(
+			EthForward::new(chain, &eth_rpc, frozen.as_deref(), max_response_size)?.into_rpc()?,
+		)?;
 	}
 
 	// Model export needs only the client, so every node exposes it regardless of

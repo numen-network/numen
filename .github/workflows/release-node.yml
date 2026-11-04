@@ -57,6 +57,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
 
+      - uses: ./.github/actions/free-disk-space
+        if: matrix.os == 'ubuntu-latest'
+
       - name: Rust compilation prerequisites (Linux)
         if: matrix.os == 'ubuntu-latest'
         uses: ./.github/actions/ubuntu-dependencies
@@ -69,10 +72,14 @@ jobs:
         run: cargo build --profile production --locked -p numen --features metadata-hash
         timeout-minutes: 90
 
+      - name: Build eth-rpc
+        run: bash .maintain/build-eth-rpc.sh target/eth-rpc --profile production
+        timeout-minutes: 90
+
       - name: Bundle release archive
         run: |
           mkdir -p ${{ matrix.asset }}
-          cp target/production/numen ${{ matrix.asset }}/
+          cp target/production/numen target/eth-rpc/bin/eth-rpc ${{ matrix.asset }}/
           cp mainnet-raw.json ${{ matrix.asset }}/
           tar -czf ${{ matrix.asset }}.tar.gz ${{ matrix.asset }}
 

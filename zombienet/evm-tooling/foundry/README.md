@@ -1,6 +1,6 @@
 # Foundry compatibility sample
 
-Smoke-tests `forge` / `cast` against a local numen dev chain over the Frontier Ethereum-compatible JSON-RPC.
+Smoke-tests `forge` / `cast` against a local numen dev chain over the Ethereum JSON-RPC the node serves through eth-rpc.
 
 ## Prerequisites
 

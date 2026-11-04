@@ -23,7 +23,7 @@ Disk usage grows as the chain does.
 
 ## Getting Started
 
-Grab a prebuilt binary from the [releases page](https://github.com/numen-network/numen/releases). Each archive holds the `numen` binary and `mainnet-raw.json`. Nothing else to download.
+Grab a prebuilt binary from the [releases page](https://github.com/numen-network/numen/releases). Each archive holds the `numen` and `eth-rpc` binaries and `mainnet-raw.json`. Nothing else to download.
 
 ```bash
 tar -xzf numen-linux-x86_64.tar.gz
@@ -126,3 +126,21 @@ For rigs on other machines, add `--rpc-external --rpc-cors all` and open port 99
 ```
 
 The node hands out tasks only once it's synced, so the miner sits idle until then.
+
+## Ethereum JSON-RPC
+
+The node serves `eth_*`, `net_*` and `web3_*` on its own RPC port once it knows an eth-rpc server to hand them to. eth-rpc comes in the same archive, built from the same polkadot-sdk commit as the runtime. It reads the chain through the node.
+
+```bash
+./numen --chain mainnet-raw.json --eth-rpc http://127.0.0.1:8545
+```
+
+```bash
+./eth-rpc --node-rpc-url ws://127.0.0.1:9944 --rpc-port 8545
+```
+
+Blocks from before pallet-revive are answered by a node that still runs Frontier and stopped importing at the upgrade. Point `--frozen-eth-rpc` at it and calls about those blocks go there, as do calls about hashes eth-rpc does not know.
+
+```bash
+./numen --chain mainnet-raw.json --eth-rpc http://127.0.0.1:8545 --frozen-eth-rpc http://<FROZEN_NODE>:9944
+```

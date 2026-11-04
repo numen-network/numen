@@ -1,7 +1,6 @@
 # ethers / web3 sample scripts
 
-Stand-alone Node.js scripts that exercise the Frontier-compatible JSON-RPC
-through both `ethers` v6 and `web3` v4.
+Stand-alone Node.js scripts that exercise the node's Ethereum JSON-RPC through both `ethers` v6 and `web3` v4.
 
 ## Run
 

@@ -1,4 +1,4 @@
-Description: EVM tooling smoke test and H160<->SS58 round-trip over Frontier JSON-RPC.
+Description: EVM tooling smoke test and H160<->SS58 round-trip through eth-rpc behind alice's RPC port.
 Network: ./zombienet.toml
 Creds: /tmp/zn-creds.cfg
 
@@ -6,4 +6,4 @@ alice: is up
 bob: is up
 charlie: is up
 
-alice: js-script ./evm-tooling.js return is 1 within 240 seconds
+alice: js-script ./evm-tooling.js return is 1 within 600 seconds
