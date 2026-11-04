@@ -23,10 +23,14 @@ The corresponding zombienet end-to-end scenario lives at [`../integration/scenar
 | Decimals           | `18`                    |
 | Block explorer URL | _(none yet)_            |
 
-Start a single-node dev chain that exposes both the substrate and Ethereum RPC namespaces on the same port:
+Start a single-node dev chain, then eth-rpc against it. The node serves the Ethereum namespaces next to the substrate ones on port 9944:
 
 ```bash
-./target/release/numen --dev --rpc-cors all --rpc-port 9944
+./target/release/numen --dev --rpc-cors all --rpc-port 9944 --eth-rpc http://127.0.0.1:8545
+```
+
+```bash
+eth-rpc --node-rpc-url ws://127.0.0.1:9944 --rpc-port 8545
 ```
 
 ## Pre-funded development accounts
@@ -81,7 +85,7 @@ The same flow is automated by [`scripts/transfer-ethers.js`](scripts/transfer-et
 
 2. In MetaMask: **Tokens → Import tokens → Custom token**, paste the printed address. Symbol auto-fills as `CNT`, decimals as `18`.
 
-3. Use **Send** to transfer `CNT` between imported accounts. MetaMask constructs the `transfer(address,uint256)` calldata, signs with the imported key, and submits to the Frontier RPC. The receipt and updated balances appear once the next block is mined.
+3. Use **Send** to transfer `CNT` between imported accounts. MetaMask constructs the `transfer(address,uint256)` calldata, signs with the imported key, and submits to the node's Ethereum RPC. The receipt and updated balances appear once the next block is mined.
 
 If any step fails, capture the MetaMask "Activity → Speed up / Cancel" detail panel and the dev-node log; both are required for a useful bug report.
 
@@ -94,12 +98,12 @@ The native balance is also an ERC20 token at `0x00000000000000000000000000000000
 
 The Rust coverage lives in [`runtime/tests/balances_erc20.rs`](../../runtime/tests/balances_erc20.rs). The JavaScript counterparts that drive the token through the live JSON-RPC are:
 
-| Path                                                                                                             | What it covers                                                 |
-| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| [`scripts/transfer-precompile.js`](scripts/transfer-precompile.js)                                               | ERC20 `transfer` of native NUMN (Alith → Baltathar via 0x0802) |
-| [`scripts/withdraw-to-substrate.js`](scripts/withdraw-to-substrate.js)                                           | `withdraw(bytes32,uint256)` — Alith (EVM) → Alice (substrate)  |
-| [`hardhat/test/NativeErc20.test.js`](hardhat/test/NativeErc20.test.js)                                           | Hardhat assertion suite for `balanceOf` / `transfer` at 0x0802 |
-| [`../integration/js-scripts/evm-precompile-roundtrip.js`](../integration/js-scripts/evm-precompile-roundtrip.js) | Zombienet round-trip: substrate → EVM → substrate              |
+| Path                                                                                                               | What it covers                                                 |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| [`scripts/transfer-precompile.js`](scripts/transfer-precompile.js)                                                 | ERC20 `transfer` of native NUMN (Alith → Baltathar via 0x0802) |
+| [`scripts/withdraw-to-substrate.js`](scripts/withdraw-to-substrate.js)                                             | `withdraw(bytes32,uint256)` — Alith (EVM) → Alice (substrate)  |
+| [`hardhat/test/NativeErc20.test.js`](hardhat/test/NativeErc20.test.js)                                             | Hardhat assertion suite for `balanceOf` / `transfer` at 0x0802 |
+| [`../integration/scenarios/02-evm-tooling/evm-tooling.js`](../integration/scenarios/02-evm-tooling/evm-tooling.js) | Zombienet round-trip: substrate → EVM → substrate              |
 
 ### MetaMask: import native NUMN as a token
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the numen binary with the `zombienet-runtime` feature.
+# Build the numen binary with the `zombienet-runtime` feature, and eth-rpc for
+# the scenarios that drive the Ethereum RPC.
 
 set -euo pipefail
 
@@ -11,6 +12,9 @@ cargo build --release -p numen --features zombienet-runtime
 BIN="$ROOT/target/release/numen"
 echo "Built: $BIN"
 "$BIN" --version
+
+bash .maintain/build-eth-rpc.sh target/eth-rpc
+target/eth-rpc/bin/eth-rpc --version
 
 # Pre-generate the raw chainspec consumed by zombienet.toml. zombienet
 # would otherwise rebuild a spec from --chain integration on every spawn

@@ -5712,6 +5712,7 @@ checksum = "72c4b1f204b655b36b24dc4939af20366c649431d4711863bbbae5c495f3eeb4"
 dependencies = [
  "jsonrpsee-client-transport",
  "jsonrpsee-core",
+ "jsonrpsee-http-client",
  "jsonrpsee-proc-macros",
  "jsonrpsee-server",
  "jsonrpsee-types",
@@ -5767,6 +5768,31 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "jsonrpsee-http-client"
+version = "0.24.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c215647e43482d478a6c21f021a013b50d64cf63431c1176eda9ef925dc54ec8"
+dependencies = [
+ "async-trait",
+ "base64",
+ "http-body 1.0.1",
+ "hyper 1.6.0",
+ "hyper-rustls",
+ "hyper-util",
+ "jsonrpsee-core",
+ "jsonrpsee-types",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower",
+ "tracing",
+ "url",
 ]
 
 [[package]]

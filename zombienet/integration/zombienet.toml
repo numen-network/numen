@@ -18,7 +18,9 @@ default_args = [
   name = "alice"
   validator = true
   bootnode = true
-  args = ["--alice", "--miner", "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", "--node-miner"]
+  # Forwards the Ethereum namespaces to the eth-rpc that scenario 02 starts on
+  # this port.
+  args = ["--alice", "--miner", "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", "--node-miner", "--eth-rpc", "http://127.0.0.1:8545"]
 
 [[relaychain.nodes]]
   name = "bob"

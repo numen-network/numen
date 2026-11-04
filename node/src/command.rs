@@ -208,6 +208,10 @@ pub fn run() -> sc_cli::Result<()> {
 			};
 
 			let mining = miner_account.map(|miner| service::MiningConfig { miner, node_miner });
+			let eth_rpc = cli
+				.eth_rpc
+				.clone()
+				.map(|eth_rpc| service::EthRpcConfig { eth_rpc, frozen: cli.frozen_eth_rpc.clone() });
 
 			let runner = cli.create_runner(&cli.run)?;
 			runner.run_node_until_exit(|config| async move {
@@ -217,10 +221,10 @@ pub fn run() -> sc_cli::Result<()> {
 							numen_runtime::opaque::Block,
 							<numen_runtime::opaque::Block as sp_runtime::traits::Block>::Hash,
 						>,
-					>(config, mining)
+					>(config, mining, eth_rpc)
 					.map_err(sc_cli::Error::Service),
 					sc_network::config::NetworkBackendType::Litep2p =>
-						service::new_full::<sc_network::Litep2pNetworkBackend>(config, mining)
+						service::new_full::<sc_network::Litep2pNetworkBackend>(config, mining, eth_rpc)
 							.map_err(sc_cli::Error::Service),
 				}
 			})

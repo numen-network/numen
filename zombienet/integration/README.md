@@ -45,8 +45,8 @@ cd zombienet/integration
 # 1. install JS deps (used by js-script blocks)
 npm install
 
-# 2. build node with zombienet-runtime AND pre-generate the raw chainspec.
-#    Re-run after every change to runtime/ or the integration preset.
+# 2. build node with zombienet-runtime and eth-rpc, AND pre-generate the raw
+#    chainspec. Re-run after every change to runtime/ or the integration preset.
 bash scripts/build-node.sh
 
 # 3. run all scenarios (auto-creates /tmp/zn-creds.cfg if missing)

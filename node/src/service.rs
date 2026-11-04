@@ -15,6 +15,9 @@ use std::{sync::{Arc, Mutex}, time::Duration};
 
 use crate::mining_rpc::ExternalMiner;
 
+/// The RPC size limits in [`Configuration`] are in megabytes.
+const MEGABYTE: u32 = 1024 * 1024;
+
 /// Full client type.
 pub type FullClient = sc_service::TFullClient<
 	Block,
@@ -135,6 +138,16 @@ type PowAlgo = PoScanAlgorithm<Block, FullClient>;
 /// Concrete mining worker handle type.
 type PowMiningHandle<L> = sc_consensus_pow::MiningHandle<Block, PowAlgo, L>;
 
+/// Servers the node hands the Ethereum JSON-RPC methods to.
+#[derive(Clone)]
+pub struct EthRpcConfig {
+	/// eth-rpc server.
+	pub eth_rpc: String,
+	/// Node that still runs Frontier and answers for the blocks before
+	/// pallet-revive.
+	pub frozen: Option<String>,
+}
+
 /// Operator mining configuration. The external mining RPC is always exposed.
 /// `node_miner` is the local scan thread count, zero when the node only relays
 /// work to external miners.
@@ -245,6 +258,7 @@ pub fn new_full<
 >(
 	config: Configuration,
 	mining: Option<MiningConfig>,
+	eth_rpc: Option<EthRpcConfig>,
 ) -> Result<TaskManager, ServiceError> {
 	let sc_service::PartialComponents {
 		client,
@@ -404,6 +418,7 @@ pub fn new_full<
 		let shared_authority_set = shared_authority_set.clone();
 		let justification_stream = justification_stream.clone();
 		let finality_proof_provider = finality_proof_provider.clone();
+		let max_response_size = config.rpc.max_response_size.saturating_mul(MEGABYTE);
 
 		Box::new(move |subscription_executor: sc_rpc::SubscriptionTaskExecutor| {
 			let mining = mining_rpc.as_ref().map(|(handle, miner, protocol)| {
@@ -425,6 +440,8 @@ pub fn new_full<
 					finality_provider: finality_proof_provider.clone(),
 				},
 				mining,
+				eth_rpc: eth_rpc.clone(),
+				max_response_size,
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		})

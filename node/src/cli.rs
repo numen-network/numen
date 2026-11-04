@@ -17,6 +17,16 @@ pub struct Cli {
 	/// all cores. Pass a number to cap the scan threads.
 	#[arg(long, value_name = "THREADS", num_args = 0..=1, default_missing_value = "0")]
 	pub node_miner: Option<usize>,
+
+	/// Serve the Ethereum JSON-RPC methods by handing them to this eth-rpc
+	/// server.
+	#[arg(long, value_name = "URL")]
+	pub eth_rpc: Option<String>,
+
+	/// Node that still runs Frontier and answers for the blocks before
+	/// pallet-revive.
+	#[arg(long, value_name = "URL", requires = "eth_rpc")]
+	pub frozen_eth_rpc: Option<String>,
 }
 
 #[derive(Debug, clap::Subcommand)]
