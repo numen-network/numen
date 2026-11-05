@@ -6,8 +6,7 @@
 # sweep defaults. JITTER sets the percent drift a remeasured file must
 # reach to replace the committed one.
 #
-# The reference machine answers to the ssh entry named by $HOST and grants
-# passwordless sudo.
+# The reference machine answers to the ssh entry named by $HOST.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -25,17 +24,7 @@ command -v subweight >/dev/null || {
 
 cargo build --profile production --locked -p numen --features runtime-benchmarks
 
-# Cloud images name themselves after their private address, which says
-# nothing about the role and pins every weight header to one instance.
-ssh "${SSH_OPTS[@]}" "$HOST" bash -s <<'EOF'
-set -euo pipefail
-old=$(hostname)
-if [[ $old != numen-bench ]]; then
-	sudo hostnamectl set-hostname numen-bench
-	sudo sed -i "s/$old/numen-bench/g" /etc/hosts
-fi
-mkdir -p numen-bench
-EOF
+ssh "${SSH_OPTS[@]}" "$HOST" 'mkdir -p numen-bench'
 
 # The sweep rewrites the weight files it is asked for, then rebuilds the
 # module list from whatever sits in the directory. Current files travel

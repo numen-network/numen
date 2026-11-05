@@ -78,8 +78,11 @@ for pallet in "${pallets[@]}"; do
 		genesis_args=(--runtime "$RUNTIME" --genesis-builder=none)
 	fi
 
+	# Cloud images name themselves after their private address. That says
+	# nothing about the role and pins every weight header to one instance.
 	echo "==> $pallet -> $output"
 	if ! "$BINARY" benchmark pallet "${genesis_args[@]}" \
+		--hostname-override numen-bench \
 		--pallet "$pallet" \
 		--extrinsic '*' \
 		--steps "$STEPS" \
