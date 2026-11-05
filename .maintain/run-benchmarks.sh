@@ -35,6 +35,12 @@ declare -A OWN=(
 	[pallet_validator]=pallets/validator/src/weights.rs
 )
 
+# Upstream benchmarks that assume an empty chain get no genesis.
+declare -A BARE_GENESIS=(
+	# Every preset seeds a registrar, the benchmarks count them from zero.
+	[pallet_identity]=1
+)
+
 common=(
 	--runtime "$RUNTIME"
 	--genesis-builder=runtime
@@ -67,8 +73,13 @@ for pallet in "${pallets[@]}"; do
 		output=runtime/src/weights/$pallet.rs
 	fi
 
+	genesis_args=("${common[@]}")
+	if [[ -v BARE_GENESIS[$pallet] ]]; then
+		genesis_args=(--runtime "$RUNTIME" --genesis-builder=none)
+	fi
+
 	echo "==> $pallet -> $output"
-	if ! "$BINARY" benchmark pallet "${common[@]}" \
+	if ! "$BINARY" benchmark pallet "${genesis_args[@]}" \
 		--pallet "$pallet" \
 		--extrinsic '*' \
 		--steps "$STEPS" \
