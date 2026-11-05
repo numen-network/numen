@@ -40,6 +40,8 @@ tar czf ~/weights.tgz pallets/*/src/weights.rs runtime/src/weights
 
 Unpack the archive in the repo root on the dev machine and review the diff. Every file header records the host and CPU that produced it. Reject any file that does not name the reference machine.
 
+Two sweeps on the same machine never agree to the last digit. Each extrinsic drifts by a few percent. `.maintain/remote-benchmarks.sh` compares every regenerated file against the committed one with [subweight](https://crates.io/crates/subweight) and keeps the committed file when both name the same CPU and no extrinsic moved by 5% or more. Only real cost changes reach the history. A file from a different CPU always replaces the committed one, since a new reference machine means a full re-run. `JITTER` overrides the 5% band.
+
 ## Excluded pallets
 
 Some upstream benchmarks hardcode assumptions this chain rejects, such as a Root origin the governance does not grant or spend amounts far below the existential deposit. Those pallets keep their upstream weights. The list and the reason for each entry live in `runtime/src/benchmarks.rs`.
