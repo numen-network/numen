@@ -33,7 +33,8 @@ tar czf - .maintain runtime/src/weights pallets/*/src/weights.rs |
 	ssh "${SSH_OPTS[@]}" "$HOST" 'tar xzf - -C numen-bench'
 scp "${SSH_OPTS[@]}" "$BINARY" "$RUNTIME" "$HOST:numen-bench/"
 
-ssh "${SSH_OPTS[@]}" "$HOST" bash -s <<EOF
+sweep_failed=0
+ssh "${SSH_OPTS[@]}" "$HOST" bash -s <<EOF || sweep_failed=1
 set -euo pipefail
 cd numen-bench
 chmod +x numen
@@ -64,3 +65,5 @@ git diff --name-only -- 'pallets/*/src/weights.rs' runtime/src/weights ':!runtim
 			git checkout -- "$file"
 		fi
 	done
+
+exit "$sweep_failed"
