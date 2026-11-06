@@ -763,7 +763,7 @@ impl pallet_im_online::Config for Runtime {
 	type UnsignedPriority = ImOnlineUnsignedPriority;
 	type MaxKeys = ImOnlineMaxKeys;
 	type MaxPeerInHeartbeats = ImOnlineMaxPeerInHeartbeats;
-	type WeightInfo = pallet_im_online::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = crate::weights::pallet_im_online::WeightInfo<Runtime>;
 }
 
 parameter_types! {
@@ -786,7 +786,7 @@ impl pallet_treasury::Config for Runtime {
 	type Burn = Burn;
 	type BurnDestination = ();
 	type SpendFunds = Bounties;
-	type WeightInfo = pallet_treasury::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = crate::weights::pallet_treasury::WeightInfo<Runtime>;
 	type MaxApprovals = MaxApprovals;
 	type SpendOrigin = governance::TreasurySpender;
 	type AssetKind = ();
@@ -922,5 +922,5 @@ impl pallet_identity::Config for Runtime {
 	type MaxUsernameLength = ConstU32<32>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
-	type WeightInfo = pallet_identity::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = crate::weights::pallet_identity::WeightInfo<Runtime>;
 }
