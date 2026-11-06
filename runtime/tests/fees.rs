@@ -1,13 +1,13 @@
-//! Fee routing and calibration. Substrate fees and the EVM base fee split
-//! between the PoW author from the block digest and the treasury, and tips
-//! reach the author whole. A block without an author pays everything to the
-//! treasury. The substrate fee constants stay pinned to the EVM gas price so
-//! neither path undercuts the other.
+//! Fee routing and calibration. Transaction fees split between the PoW author
+//! from the block digest and the treasury, and tips reach the author whole. A
+//! block without an author pays everything to the treasury. Weight and length
+//! price a full block alike, and filling either one raises the next block's
+//! price.
 
 mod common;
 
 use codec::Encode;
-use common::{evm_account, new_test_ext};
+use common::new_test_ext;
 use frame_support::{
 	dispatch::DispatchClass,
 	weights::Weight,
@@ -21,25 +21,19 @@ use frame_support::{
 };
 use numen_runtime::{
 	configs::{
-		evm::DefaultBaseFeePerGas, DealWithFees, FullnessFeeUpdate, RuntimeBlockLength,
-		RuntimeBlockWeights, TreasuryAccount, LENGTH_FEE, MINER_FEE_SHARE, WEIGHT_FEE,
+		DealWithFees, FullnessFeeUpdate, RuntimeBlockLength, RuntimeBlockWeights,
+		TreasuryAccount, LENGTH_FEE, MINER_FEE_SHARE, WEIGHT_FEE,
 	},
 	AccountId, Balance, Balances, Runtime, System, TransactionPayment, UNIT,
 };
-use pallet_evm::{FeeCalculator, Runner};
 use pallet_transaction_payment::Multiplier;
 use sp_consensus_pow::POW_ENGINE_ID;
-use sp_core::{H160, U256};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::{
 	traits::{Convert, One},
 	DigestItem, FixedPointNumber,
 };
 
-/// Twice the base fee, leaving room for the tip below.
-const MAX_FEE_PER_GAS: u64 = 2_000_000_000_000;
-const TIP_PER_GAS: u64 = 500_000_000_000;
-const GAS_LIMIT: u64 = 100_000;
 const CALLER_FUNDS: Balance = 1_000 * UNIT;
 
 fn miner() -> AccountId {
@@ -65,30 +59,6 @@ fn fee_credit(
 		Fortitude::Polite,
 	)
 	.expect("payer covers the fee")
-}
-
-/// A transactional EVM call to a plain address, paying a tip on top of the
-/// base fee.
-fn evm_plain_call_with_tip(caller: H160) -> fp_evm::CallInfo {
-	<Runtime as pallet_evm::Config>::Runner::call(
-		caller,
-		H160::from_low_u64_be(0xD00D),
-		Vec::new(),
-		U256::zero(),
-		GAS_LIMIT,
-		Some(U256::from(MAX_FEE_PER_GAS)),
-		Some(U256::from(TIP_PER_GAS)),
-		None,
-		Vec::new(),
-		Vec::new(),
-		true,
-		true,
-		None,
-		None,
-		None,
-		<Runtime as pallet_evm::Config>::config(),
-	)
-	.expect("plain call must dispatch without runtime error")
 }
 
 #[test]
@@ -198,82 +168,6 @@ fn substrate_tips_reach_the_treasury_without_author_digest() {
 		);
 		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
 	});
-}
-
-#[test]
-fn evm_base_fee_splits_while_the_tip_reaches_the_author() {
-	new_test_ext().execute_with(|| {
-		let author = miner();
-		set_pow_author(&author);
-		let caller = H160::from_low_u64_be(0xFEE1);
-		let caller_acc = evm_account(caller);
-		Balances::set_balance(&caller_acc, CALLER_FUNDS);
-		let issuance_before = Balances::total_issuance();
-		let (base_fee, _) = <Runtime as pallet_evm::Config>::FeeCalculator::min_gas_price();
-
-		let info = evm_plain_call_with_tip(caller);
-		assert!(info.exit_reason.is_succeed(), "unexpected exit: {:?}", info.exit_reason);
-
-		let base_paid = (info.used_gas.effective * base_fee).as_u128();
-		let tip_paid = (info.used_gas.effective * U256::from(TIP_PER_GAS)).as_u128();
-		let caller_spent = CALLER_FUNDS - Balances::free_balance(&caller_acc);
-		let author_gain = Balances::free_balance(&author);
-
-		assert_eq!(
-			author_gain,
-			MINER_FEE_SHARE * base_paid + tip_paid,
-			"the author takes its share of the base fee and the whole tip",
-		);
-		assert_eq!(caller_spent, base_paid + tip_paid, "the caller pays both in full");
-		assert_eq!(
-			Balances::free_balance(evm_account(H160::zero())),
-			0,
-			"the tip must bypass the zero coinbase the default handler pays",
-		);
-		assert_eq!(
-			Balances::free_balance(TreasuryAccount::get()),
-			base_paid - MINER_FEE_SHARE * base_paid,
-			"the base fee the author does not keep funds the treasury",
-		);
-		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
-	});
-}
-
-#[test]
-fn evm_fees_reach_the_treasury_without_author_digest() {
-	new_test_ext().execute_with(|| {
-		let caller = H160::from_low_u64_be(0xFEE1);
-		let caller_acc = evm_account(caller);
-		Balances::set_balance(&caller_acc, CALLER_FUNDS);
-		let issuance_before = Balances::total_issuance();
-
-		let info = evm_plain_call_with_tip(caller);
-		assert!(info.exit_reason.is_succeed(), "unexpected exit: {:?}", info.exit_reason);
-
-		let caller_spent = CALLER_FUNDS - Balances::free_balance(&caller_acc);
-		assert!(caller_spent > 0);
-		assert_eq!(
-			Balances::free_balance(TreasuryAccount::get()),
-			caller_spent,
-			"base fee and tip both fund the treasury in an authorless block",
-		);
-		assert_eq!(Balances::total_issuance(), issuance_before, "no part of the fee burns");
-	});
-}
-
-/// `WeightPerGas` derives from the block gas limit and the block weight budget,
-/// so retuning either one silently reprices substrate compute against EVM
-/// compute.
-#[test]
-fn weight_fee_tracks_the_evm_gas_price() {
-	let weight_per_gas =
-		Balance::from(<Runtime as pallet_evm::Config>::WeightPerGas::get().ref_time());
-
-	assert_eq!(
-		WEIGHT_FEE * weight_per_gas,
-		DefaultBaseFeePerGas::get().as_u128(),
-		"one gas unit of work must cost the same through either path",
-	);
 }
 
 /// A block fills on whichever of weight or length runs out first, so the two

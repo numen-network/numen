@@ -8,7 +8,6 @@ mod common;
 
 use codec::Decode;
 use common::new_test_ext;
-use fp_evm::{IsPrecompileResult, PrecompileSet};
 use frame_support::{
 	__private::metadata::{RuntimeMetadata, RuntimeMetadataPrefixed},
 	assert_ok,
@@ -18,12 +17,10 @@ use frame_support::{
 	},
 };
 use numen_runtime::{
-	configs::evm::FrontierPrecompiles,
 	configs::governance::{pallet_custom_origins, TracksInfo, TreasurySpender},
 	Balance, Balances, Preimage, Runtime, RuntimeHoldReason, RuntimeOrigin, UNIT,
 };
 use pallet_referenda::TracksInfo as _;
-use sp_core::H160;
 use sp_keyring::Sr25519Keyring;
 
 const FUNDS: Balance = 10_000 * UNIT;
@@ -131,20 +128,4 @@ fn published_engine_is_the_one_the_digest_carries() {
 		.expect("Engine is published as four bytes");
 
 	assert_eq!(engine, sp_consensus_pow::POW_ENGINE_ID);
-}
-
-/// A wallet builds its withdraw call against this address and an indexer
-/// filters it out of token listings, so the published copy has to be an
-/// address the precompile set actually serves.
-#[test]
-fn published_balances_erc20_is_an_address_the_precompile_set_serves() {
-	let address: H160 = Decode::decode(&mut &published("Precompiles", "BalancesErc20")[..])
-		.expect("BalancesErc20 is published as a twenty byte address");
-
-	match FrontierPrecompiles::<Runtime>::new().is_precompile(address, u64::MAX) {
-		IsPrecompileResult::Answer { is_precompile, .. } => {
-			assert!(is_precompile, "the precompile set serves the published address");
-		}
-		IsPrecompileResult::OutOfGas => panic!("a membership probe spends no gas"),
-	}
 }

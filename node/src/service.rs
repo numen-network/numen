@@ -11,16 +11,9 @@ use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use numen_runtime::{self, apis::RuntimeApi, opaque::Block, AccountId};
 use sp_core::{crypto::Ss58Codec, H256, U256};
-use std::{path::Path, sync::{Arc, Mutex}, time::Duration};
+use std::{sync::{Arc, Mutex}, time::Duration};
 
 use crate::mining_rpc::ExternalMiner;
-
-use fc_storage::{StorageOverride, StorageOverrideHandler};
-
-use crate::eth::{
-	db_config_dir, new_frontier_partial, spawn_frontier_tasks, FrontierBackend,
-	FrontierPartialComponents,
-};
 
 /// Full client type.
 pub type FullClient = sc_service::TFullClient<
@@ -34,9 +27,9 @@ type FullSelectChain = LongestChain<FullBackend, Block>;
 
 /// Host functions exposed to the runtime.
 ///
-/// `pallet-evm` records PoV cost via `sp_io::storage_proof_size`, which is
-/// provided by `cumulus-primitives-proof-size-hostfunction` rather than the
-/// substrate default set.
+/// Runtimes built with pallet-evm import `sp_io::storage_proof_size`, which
+/// lives outside the substrate default set. A node syncing from genesis cannot
+/// execute their blocks without it.
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	cumulus_primitives_proof_size_hostfunction::storage_proof_size::HostFunctions,
@@ -55,8 +48,6 @@ pub type Service = sc_service::PartialComponents<
 		GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
 		LinkHalf<Block, FullClient, FullSelectChain>,
 		Option<Telemetry>,
-		FrontierBackend,
-		Arc<dyn StorageOverride<Block>>,
 	),
 >;
 
@@ -127,16 +118,6 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		config.prometheus_registry(),
 	)?;
 
-	// Frontier KV backend + storage override (used by Eth-RPC and mapping-sync).
-	let storage_override: Arc<dyn StorageOverride<Block>> = Arc::new(
-		StorageOverrideHandler::<Block, FullClient, FullBackend>::new(client.clone()),
-	);
-	let frontier_backend = FrontierBackend::KeyValue(Arc::new(fc_db::kv::Backend::open(
-		Arc::clone(&client),
-		&config.database,
-		Path::new(&db_config_dir(config)),
-	)?));
-
 	Ok(sc_service::PartialComponents {
 		client,
 		backend,
@@ -145,7 +126,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (grandpa_block_import, grandpa_link, telemetry, frontier_backend, storage_override),
+		other: (grandpa_block_import, grandpa_link, telemetry),
 	})
 }
 
@@ -262,7 +243,7 @@ where
 pub fn new_full<
 	N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
 >(
-	mut config: Configuration,
+	config: Configuration,
 	mining: Option<MiningConfig>,
 ) -> Result<TaskManager, ServiceError> {
 	let sc_service::PartialComponents {
@@ -273,7 +254,7 @@ pub fn new_full<
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (grandpa_block_import, grandpa_link, mut telemetry, frontier_backend, storage_override),
+		other: (grandpa_block_import, grandpa_link, mut telemetry),
 	} = new_partial(&config)?;
 
 	let mut net_config = sc_network::config::FullNetworkConfiguration::<
@@ -349,21 +330,6 @@ pub fn new_full<
 		Some(shared_authority_set.clone()),
 	);
 
-	// ---------- Frontier (Ethereum-compatible RPC) wiring ----------
-	let FrontierPartialComponents { filter_pool, fee_history_cache, fee_history_cache_limit } =
-		new_frontier_partial();
-
-	fc_mapping_sync::set_max_pending_notifications_per_subscriber(512);
-	let pubsub_notification_sinks: fc_mapping_sync::EthereumBlockNotificationSinks<
-		fc_mapping_sync::EthereumBlockNotification<Block>,
-	> = fc_mapping_sync::EthereumBlockNotificationSinks::default();
-	let pubsub_notification_sinks = Arc::new(pubsub_notification_sinks);
-
-	// Use the Ethereum-style subscription id provider.
-	config.rpc.id_provider = Some(Box::new(fc_rpc::EthereumSubIdProvider));
-
-	let frontier_backend = Arc::new(frontier_backend);
-
 	// ---------- PoW mining (external RPC, plus local scan when node_miner) ----------
 	// The proposal worker feeds both paths. Only how a seal is found differs
 	// (in-process scan vs external submission).
@@ -438,53 +404,7 @@ pub fn new_full<
 		let justification_stream = justification_stream.clone();
 		let finality_proof_provider = finality_proof_provider.clone();
 
-		let network = network.clone();
-		let sync_service = sync_service.clone();
-		let filter_pool = filter_pool.clone();
-		let fee_history_cache = fee_history_cache.clone();
-		let storage_override = storage_override.clone();
-		let frontier_backend = frontier_backend.clone();
-		let pubsub_notification_sinks = pubsub_notification_sinks.clone();
-
-		let block_data_cache = Arc::new(fc_rpc::EthBlockDataCacheTask::new(
-			task_manager.spawn_handle(),
-			storage_override.clone(),
-			50,
-			50,
-			prometheus_registry.clone(),
-		));
-
-		// PoW chain: pending state inherents are just timestamp.
-		let pending_create_inherent_data_providers = move |_, ()| async move {
-			Ok(sp_timestamp::InherentDataProvider::from_system_time())
-		};
-
 		Box::new(move |subscription_executor: sc_rpc::SubscriptionTaskExecutor| {
-			let eth_deps = crate::rpc::EthDeps::<_, _, fp_rpc::NoTransactionConverter, _> {
-				client: client.clone(),
-				pool: pool.clone(),
-				converter: None,
-				is_authority,
-				enable_dev_signer: false,
-				network: network.clone(),
-				sync: sync_service.clone(),
-				frontier_backend: match &*frontier_backend {
-					fc_db::Backend::KeyValue(b) => b.clone() as Arc<dyn fc_api::Backend<Block>>,
-					fc_db::Backend::Sql(b) => b.clone() as Arc<dyn fc_api::Backend<Block>>,
-				},
-				storage_override: storage_override.clone(),
-				block_data_cache: block_data_cache.clone(),
-				filter_pool: filter_pool.clone(),
-				fee_history_cache: fee_history_cache.clone(),
-				fee_history_cache_limit,
-				max_past_logs: 10_000,
-				max_block_range: 1024,
-				execute_gas_limit_multiplier: 10,
-				rpc_allow_unprotected_txs: false,
-				forced_parent_hashes: None,
-				pending_create_inherent_data_providers,
-			};
-
 			let mining = mining_rpc.as_ref().map(|(handle, miner, protocol)| {
 				crate::rpc::MiningDeps {
 					handle: handle.clone(),
@@ -503,11 +423,9 @@ pub fn new_full<
 					subscription_executor: subscription_executor.clone(),
 					finality_provider: finality_proof_provider.clone(),
 				},
-				eth: eth_deps,
 				mining,
 			};
-			crate::rpc::create_full(deps, subscription_executor, pubsub_notification_sinks.clone())
-				.map_err(Into::into)
+			crate::rpc::create_full(deps).map_err(Into::into)
 		})
 	};
 
@@ -526,20 +444,6 @@ pub fn new_full<
 		telemetry: telemetry.as_mut(),
 		tracing_execute_block: None,
 	})?;
-
-	// Spawn the Frontier mapping-sync / filter-pool / fee-history background tasks.
-	spawn_frontier_tasks(
-		&task_manager,
-		client.clone(),
-		backend,
-		frontier_backend,
-		filter_pool,
-		storage_override,
-		fee_history_cache,
-		fee_history_cache_limit,
-		sync_service.clone(),
-		pubsub_notification_sinks,
-	);
 
 	// GRANDPA voter / observer.
 	let grandpa_config = sc_consensus_grandpa::Config {

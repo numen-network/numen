@@ -1,16 +1,14 @@
 use crate::{
-	AccountId, BalancesConfig, DifficultyConfig, EVMChainIdConfig, EVMConfig,
-	GenesisRegistrarsConfig, PrimeConfig, RuntimeGenesisConfig, SessionConfig, SessionKeys,
-	ValidatorConfig, UNIT,
+	AccountId, BalancesConfig, DifficultyConfig, GenesisRegistrarsConfig, PrimeConfig,
+	RuntimeGenesisConfig, SessionConfig, SessionKeys, ValidatorConfig, UNIT,
 };
-use alloc::{collections::BTreeMap, vec, vec::Vec};
-use fp_evm::GenesisAccount;
+use alloc::{vec, vec::Vec};
 use frame_support::build_struct_json_patch;
 use hex_literal::hex;
 use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
 use serde_json::Value;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
-use sp_core::{crypto::UncheckedInto, H160, U256};
+use sp_core::{crypto::UncheckedInto, U256};
 use sp_genesis_builder::{self, PresetId};
 use sp_keyring::{Ed25519Keyring, Sr25519Keyring};
 
@@ -20,37 +18,7 @@ const GENESIS_AIRDROP_ISSUANCE: u128 = 50_000_000 * UNIT;
 const INITIAL_DIFFICULTY: u32 = 1_000;
 const MAIN_INITIAL_DIFFICULTY: u32 = 1_000_000;
 
-const DEV_EVM_ACCOUNT_BALANCE: u128 = 1_000_000 * UNIT;
 const DEV_ACCOUNT_BALANCE: u128 = 1_000_000 * UNIT;
-
-const DEV_EVM_CHAIN_ID: u64 = 320262;
-const TEST_EVM_CHAIN_ID: u64 = 320261;
-const MAIN_EVM_CHAIN_ID: u64 = 32026;
-
-fn dev_evm_accounts() -> BTreeMap<H160, GenesisAccount> {
-	let balance = U256::from(DEV_EVM_ACCOUNT_BALANCE);
-	let make = |bytes: [u8; 20]| {
-		(
-			H160::from(bytes),
-			GenesisAccount {
-				nonce: U256::zero(),
-				balance,
-				storage: Default::default(),
-				code: Default::default(),
-			},
-		)
-	};
-	[
-		make([0xf2, 0x4f, 0xf3, 0xa9, 0xcf, 0x04, 0xc7, 0x1d, 0xbc, 0x94, 0xd0, 0xb5, 0x66, 0xf7, 0xa2, 0x7b, 0x94, 0x56, 0x6c, 0xac]), // Alith
-		make([0x3c, 0xd0, 0xa7, 0x05, 0xa2, 0xdc, 0x65, 0xe5, 0xb1, 0xe1, 0x20, 0x58, 0x96, 0xba, 0xa2, 0xbe, 0x8a, 0x07, 0xc6, 0xe0]), // Baltathar
-		make([0x79, 0x8d, 0x4b, 0xa9, 0xba, 0xf0, 0x06, 0x4e, 0xc1, 0x9e, 0xb4, 0xf0, 0xa1, 0xa4, 0x57, 0x85, 0xae, 0x9d, 0x6d, 0xfc]), // Charleth
-		make([0x77, 0x35, 0x39, 0xd4, 0xac, 0x0e, 0x78, 0x62, 0x33, 0xd9, 0x0a, 0x23, 0x36, 0x54, 0xcc, 0xee, 0x26, 0xa6, 0x13, 0xd9]), // Dorothy
-		make([0xff, 0x64, 0xd3, 0xf6, 0xef, 0xe2, 0x31, 0x7e, 0xe2, 0x80, 0x7d, 0x22, 0x3a, 0x0b, 0xdc, 0x4c, 0x0c, 0x49, 0xdf, 0xdb]), // Ethan
-		make([0xc0, 0xf0, 0xf4, 0xab, 0x32, 0x4c, 0x46, 0xe5, 0x5d, 0x02, 0xd0, 0x03, 0x33, 0x43, 0xb4, 0xbe, 0x8a, 0x55, 0x53, 0x2d]), // Faith
-	]
-	.into_iter()
-	.collect()
-}
 
 fn dev_validators() -> Vec<(AccountId, GrandpaId, ImOnlineId)> {
 	vec![
@@ -140,8 +108,6 @@ fn genesis_patch(
 	prime_key: Option<AccountId>,
 	registrars: Vec<AccountId>,
 	validators: Vec<(AccountId, GrandpaId, ImOnlineId)>,
-	chain_id: u64,
-	evm_accounts: BTreeMap<H160, GenesisAccount>,
 	initial_difficulty: U256
 ) -> Value {
 
@@ -163,8 +129,6 @@ fn genesis_patch(
 			initial_validators: validators.iter().map(|(a, _, _)| a.clone()).collect::<Vec<_>>(),
 			..Default::default()
 		},
-		evm_chain_id: EVMChainIdConfig { chain_id, ..Default::default() },
-		evm: EVMConfig { accounts: evm_accounts, ..Default::default() },
 	})
 }
 
@@ -175,8 +139,6 @@ pub fn development_config_genesis() -> Value {
 		Some(Sr25519Keyring::Alice.to_account_id()),
 		dev_registrars(),
 		dev_validators(),
-		DEV_EVM_CHAIN_ID,
-		dev_evm_accounts(),
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -187,8 +149,6 @@ pub fn local_config_genesis() -> Value {
 		Some(Sr25519Keyring::Alice.to_account_id()),
 		dev_registrars(),
 		dev_validators(),
-		DEV_EVM_CHAIN_ID,
-		dev_evm_accounts(),
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -199,8 +159,6 @@ pub fn integration_config_genesis() -> Value {
 		Some(Sr25519Keyring::Alice.to_account_id()),
 		dev_registrars(),
 		dev_validators(),
-		DEV_EVM_CHAIN_ID,
-		dev_evm_accounts(),
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -211,8 +169,6 @@ pub fn testnet_config_genesis() -> Value {
 		Some(PRIME.into()),
 		live_registrars(),
 		testnet_validators(),
-		TEST_EVM_CHAIN_ID,
-		BTreeMap::new(),
 		INITIAL_DIFFICULTY.into()
 	)
 }
@@ -223,8 +179,6 @@ pub fn mainnet_config_genesis() -> Value {
 		Some(PRIME.into()),
 		live_registrars(),
 		live_validators(),
-		MAIN_EVM_CHAIN_ID,
-		BTreeMap::new(),
 		MAIN_INITIAL_DIFFICULTY.into()
 	)
 }
