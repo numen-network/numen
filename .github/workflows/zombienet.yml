@@ -13,9 +13,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/free-disk-space
       - uses: ./.github/actions/ubuntu-dependencies
-      - name: Build node
+      - name: Build node and eth-rpc
         run: bash zombienet/integration/scripts/build-node.sh
-        timeout-minutes: 60
+        timeout-minutes: 120
       - name: List scenarios
         id: list
         run: |
@@ -24,7 +24,7 @@ jobs:
       - name: Stage artifacts
         run: |
           mkdir -p stage
-          cp target/release/numen stage/
+          cp target/release/numen target/eth-rpc/bin/eth-rpc stage/
           cp zombienet/integration/integration-raw.json stage/
       - uses: actions/upload-artifact@v4
         with:
@@ -46,9 +46,10 @@ jobs:
           path: stage
       - name: Restore artifacts
         run: |
-          mkdir -p target/release
+          mkdir -p target/release target/eth-rpc/bin
           cp stage/numen target/release/
-          chmod +x target/release/numen
+          cp stage/eth-rpc target/eth-rpc/bin/
+          chmod +x target/release/numen target/eth-rpc/bin/eth-rpc
           cp stage/integration-raw.json zombienet/integration/
       - name: Install zombienet
         run: |

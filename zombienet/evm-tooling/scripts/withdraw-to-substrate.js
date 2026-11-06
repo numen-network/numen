@@ -8,7 +8,7 @@
 // Verification is EVM-side only (caller balance decreased and the
 // `Withdrawal(address,bytes32,uint256)` event matches). Substrate-side
 // verification through `@polkadot/api` lives in
-// `zombienet/integration/js-scripts/evm-precompile-roundtrip.js`.
+// `zombienet/integration/scenarios/02-evm-tooling/evm-tooling.js`.
 
 const {
   JsonRpcProvider,

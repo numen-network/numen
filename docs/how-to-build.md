@@ -166,3 +166,13 @@ The `production` profile turns on fat LTO and a single codegen unit. Faster node
 The `metadata-hash` feature bakes the runtime metadata hash into the wasm. Hardware wallets like Ledger and Polkadot Vault need it to verify what they sign. Costs a second wasm build.
 
 Expect well over an hour on a cold cache.
+
+### eth-rpc
+
+The release archive also carries eth-rpc. It's built from the polkadot-sdk commit `Cargo.lock` pins, the same one the runtime uses.
+
+```bash
+.maintain/build-eth-rpc.sh target/eth-rpc --profile production
+```
+
+The binary lands in `target/eth-rpc/bin/eth-rpc`.

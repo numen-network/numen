@@ -1,6 +1,6 @@
 # Hardhat compatibility sample
 
-End-to-end Hardhat 3 workflow against a local numen dev chain. Verifies that compile → deploy → call → state-readback work over the Frontier Ethereum-compatible JSON-RPC.
+End-to-end Hardhat 3 workflow against a local numen dev chain. Verifies that compile → deploy → call → state-readback work over the Ethereum JSON-RPC the node serves through eth-rpc.
 
 ## Prerequisites
 
