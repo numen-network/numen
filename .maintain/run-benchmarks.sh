@@ -39,6 +39,9 @@ declare -A OWN=(
 declare -A BARE_GENESIS=(
 	# Every preset seeds a registrar, the benchmarks count them from zero.
 	[pallet_identity]=1
+	# Only k=1 matches the preset validator and reads the liveness maps.
+	# A key read at one k alone breaks the per-key PoV fit.
+	[pallet_im_online]=1
 )
 
 common=(
