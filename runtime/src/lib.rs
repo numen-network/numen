@@ -19,8 +19,6 @@ use sp_runtime::{
 	traits::{BlakeTwo256, IdentifyAccount, Verify},
 	MultiAddress, MultiSignature,
 };
-#[cfg(feature = "std")]
-use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 pub use frame_system::Call as SystemCall;
@@ -96,12 +94,6 @@ pub const MICRO_UNIT: Balance = 1_000_000_000_000;
 /// the address is funded again.
 pub const EXISTENTIAL_DEPOSIT: Balance = 0;
 
-/// The version information used to identify this runtime when compiled natively.
-#[cfg(feature = "std")]
-pub fn native_version() -> NativeVersion {
-	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
-}
-
 /// Alias to 512-bit hash when used in the context of a transaction signature on the chain.
 pub type Signature = MultiSignature;
 
@@ -138,6 +130,7 @@ pub type BlockId = generic::BlockId<Block>;
 
 /// The `TransactionExtension` to the basic transaction logic.
 pub type TxExtension = (
+	frame_system::AuthorizeCall<Runtime>,
 	frame_system::CheckNonZeroSender<Runtime>,
 	frame_system::CheckSpecVersion<Runtime>,
 	frame_system::CheckTxVersion<Runtime>,
@@ -291,9 +284,8 @@ mod runtime {
 	pub type Prime = pallet_prime;
 }
 
-// pallet-im-online submits unsigned heartbeat extrinsics from offchain
-// workers. The runtime must expose how to build a bare (unsigned/inherent)
-// extrinsic for any pallet `Call`.
+// Offchain workers submit pallet-im-online heartbeats as authorized
+// transactions and pallet-grandpa equivocation reports as bare extrinsics.
 impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for Runtime where RuntimeCall: From<LocalCall>,
 {
 	type Extrinsic = UncheckedExtrinsic;
@@ -304,5 +296,33 @@ impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for Runtime where 
 {
 	fn create_bare(call: RuntimeCall) -> UncheckedExtrinsic {
 		UncheckedExtrinsic::new_bare(call)
+	}
+}
+
+impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime where RuntimeCall: From<LocalCall>,
+{
+	type Extension = TxExtension;
+
+	fn create_transaction(call: RuntimeCall, extension: TxExtension) -> UncheckedExtrinsic {
+		UncheckedExtrinsic::new_transaction(call, extension)
+	}
+}
+
+impl<LocalCall> frame_system::offchain::CreateAuthorizedTransaction<LocalCall> for Runtime where RuntimeCall: From<LocalCall>,
+{
+	fn create_extension() -> TxExtension {
+		(
+			frame_system::AuthorizeCall::<Runtime>::new(),
+			frame_system::CheckNonZeroSender::<Runtime>::new(),
+			frame_system::CheckSpecVersion::<Runtime>::new(),
+			frame_system::CheckTxVersion::<Runtime>::new(),
+			frame_system::CheckGenesis::<Runtime>::new(),
+			frame_system::CheckEra::<Runtime>::from(generic::Era::Immortal),
+			frame_system::CheckNonce::<Runtime>::from(0),
+			frame_system::CheckWeight::<Runtime>::new(),
+			pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(0),
+			frame_metadata_hash_extension::CheckMetadataHash::<Runtime>::new(false),
+			frame_system::WeightReclaim::<Runtime>::new(),
+		)
 	}
 }
