@@ -13,10 +13,11 @@ frame_benchmarking::define_benchmarks!(
 	// never implement it. Upstream runtimes wire `()` here too.
 	[pallet_validator, Validator]
 	[pallet_im_online, ImOnline]
-	// `pallet_treasury` stays out. Its payout benchmark spends a hardcoded
-	// 100 units, far below this chain's existential deposit, so the transfer
-	// can never succeed. Weights stay on the upstream values.
-	[pallet_bounties, Bounties]
+	[pallet_treasury, Treasury]
+	// `pallet_bounties` stays out. Its setup funds the pot with a billion
+	// existential deposits. At this chain's one plank ED that falls far short
+	// of the bounty it approves, so the bounty never gets funded. Weights stay
+	// on the upstream values.
 	// `pallet_child_bounties` stays out. Its setup hardcodes a Root origin for
 	// `propose_curator`, but bounty spends here run through OpenGov tracks that
 	// Root does not satisfy. Weights stay on the upstream values.
@@ -31,10 +32,11 @@ frame_benchmarking::define_benchmarks!(
 	[pallet_proxy, Proxy]
 	[pallet_prime, Prime]
 	[pallet_vesting, Vesting]
-	[pallet_revive, Revive]
+	// `pallet_revive` stays out. `seal_call` and `seal_instantiate` send 100
+	// units of dust, which needs a `NativeToEthRatio` above 100, and this chain
+	// runs at 1. `v2_migration_step` also picks up the genesis code behind
+	// `0x…0802` as an extra entry to migrate. Weights stay on the upstream
+	// values.
 	[pallet_evm_claims, EvmClaims]
-	// `pallet_identity` stays out until its weights get generated. The old
-	// blocker is gone now that `ForceOrigin` is `EnsureRoot`, which is what its
-	// `kill_username` benchmark dispatches from. Weights stay on the upstream
-	// values meanwhile.
+	[pallet_identity, Identity]
 );
