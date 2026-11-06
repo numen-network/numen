@@ -1,5 +1,5 @@
 // External crates imports
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use codec::Encode;
 use frame_support::{
 	genesis_builder_helper::{build_state, get_preset},
@@ -16,13 +16,18 @@ use sp_version::RuntimeVersion;
 
 // Local module imports
 use super::{
-	AccountId, Balance, Block, Executive, Grandpa, Historical,
-	InherentDataExt, Nonce, Runtime, RuntimeCall, RuntimeGenesisConfig, SessionKeys, System,
-	TransactionPayment, VERSION,
+	AccountId, Balance, Block, BlockNumber, Executive, Grandpa, Historical, InherentDataExt,
+	Nonce, Runtime, RuntimeCall, RuntimeGenesisConfig, SessionKeys, System, TransactionPayment,
+	VERSION,
 	inherent_checks::{check_timestamp_drift, timestamp_from_inherent},
 };
 
-impl_runtime_apis! {
+pallet_revive::impl_runtime_apis_plus_revive_traits!(
+	Runtime,
+	Revive,
+	Executive,
+	EthExtraImpl,
+
 	impl sp_api::Core<Block> for Runtime {
 		fn version() -> RuntimeVersion {
 			VERSION
@@ -89,7 +94,7 @@ impl_runtime_apis! {
 				for ext_result in block.extrinsics() {
 					let Ok(ext) = ext_result else { continue };
 					if let RuntimeCall::Timestamp(pallet_timestamp::Call::set { now }) =
-						&ext.function
+						&ext.0.function
 					{
 						check_timestamp_drift(
 							&mut result,
@@ -329,4 +334,4 @@ impl_runtime_apis! {
 			crate::genesis_config_presets::preset_names()
 		}
 	}
-}
+);

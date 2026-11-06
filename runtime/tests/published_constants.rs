@@ -30,7 +30,7 @@ const PREIMAGE_HOLD: RuntimeHoldReason =
 
 /// SCALE payload the metadata carries for one published constant.
 fn published(pallet: &str, constant: &str) -> Vec<u8> {
-	let RuntimeMetadataPrefixed(_, metadata) = Runtime::metadata();
+	let RuntimeMetadataPrefixed(_, metadata) = new_test_ext().execute_with(Runtime::metadata);
 	let RuntimeMetadata::V14(v14) = metadata else {
 		panic!("construct_runtime hands back V14");
 	};

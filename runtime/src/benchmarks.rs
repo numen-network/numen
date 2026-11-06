@@ -31,6 +31,7 @@ frame_benchmarking::define_benchmarks!(
 	[pallet_proxy, Proxy]
 	[pallet_prime, Prime]
 	[pallet_vesting, Vesting]
+	[pallet_revive, Revive]
 	// `pallet_identity` stays out until its weights get generated. The old
 	// blocker is gone now that `ForceOrigin` is `EnsureRoot`, which is what its
 	// `kill_username` benchmark dispatches from. Weights stay on the upstream

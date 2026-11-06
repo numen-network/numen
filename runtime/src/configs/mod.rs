@@ -12,7 +12,7 @@ use frame_support::{
 	},
 	weights::{
 		constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
-		ConstantMultiplier, Weight, WeightToFee,
+		Weight, WeightToFee,
 	},
 	PalletId,
 };
@@ -105,6 +105,9 @@ impl frame_system::Config for Runtime {
 	/// Numen brand.
 	type SS58Prefix = SS58Prefix;
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
+	/// Maps every new account onto an EVM address of its own, so it can call
+	/// contracts and receive funds sent to that address without a deposit.
+	type OnNewAccount = pallet_revive::AutoMapper<Runtime>;
 	type SystemWeightInfo = crate::weights::frame_system::WeightInfo<Runtime>;
 	type ExtensionsWeightInfo = crate::weights::frame_system_extensions::WeightInfo<Runtime>;
 }
@@ -316,7 +319,7 @@ impl pallet_transaction_payment::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type OnChargeTransaction = FungibleAdapter<Balances, DealWithFees>;
 	type OperationalFeeMultiplier = ConstU8<5>;
-	type WeightToFee = ConstantMultiplier<Balance, ConstU128<{ WEIGHT_FEE / FEE_ANCHOR }>>;
+	type WeightToFee = pallet_revive::evm::fees::BlockRatioFee<WEIGHT_FEE, FEE_ANCHOR, Runtime, Balance>;
 	type LengthToFee = AdjustedLengthToFee;
 	type FeeMultiplierUpdate = FullnessFeeUpdate<Runtime>;
 	type WeightInfo = crate::weights::pallet_transaction_payment::WeightInfo<Runtime>;
@@ -390,13 +393,15 @@ impl InstanceFilter<RuntimeCall> for ProxyType {
 	fn filter(&self, c: &RuntimeCall) -> bool {
 		match self {
 			ProxyType::Any => true,
-			// Nested calls in a utility batch inherit this filter through the
-			// origin. `vested_transfer` is the only vesting call that moves
-			// funds, the rest only rewrite locks on an account that already
-			// holds them.
+			// Contract calls carry value as well, so they are fenced off
+			// together with direct transfers. Nested calls in a utility batch
+			// inherit this filter through the origin. `vested_transfer` is the
+			// only vesting call that moves funds, the rest only rewrite locks
+			// on an account that already holds them.
 			ProxyType::NonTransfer => !matches!(
 				c,
 				RuntimeCall::Balances(..)
+					| RuntimeCall::Revive(..)
 					| RuntimeCall::Vesting(pallet_vesting::Call::vested_transfer { .. })
 			),
 			ProxyType::Governance => matches!(

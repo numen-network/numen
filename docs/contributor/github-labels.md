@@ -15,7 +15,7 @@
 | `A-ci`              | Workflow, release pipelines                                                                   |
 | `A-docs`            | Documentation                                                                                 |
 | `A-economics`       | Fees, block rewards, issuance and vesting                                                     |
-| `A-evm`             | Frontier, Ethereum RPC, precompile                                                            |
+| `A-evm`             | pallet-revive, Ethereum RPC, precompile                                                       |
 | `A-governance`      | OpenGov, treasury                                                                             |
 | `A-grandpa`         | GRANDPA finality and fork-choice                                                              |
 | `A-identity`        | Identity                                                                                      |

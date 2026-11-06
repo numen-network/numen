@@ -2,12 +2,15 @@
 # h160-to-ss58.sh
 #
 # Convert an Ethereum H160 address to the Substrate AccountId32 / SS58 address
-# used by this runtime's pallet-evm `HashedAddressMapping<BlakeTwo256>`.
+# pallet-revive's `AccountId32Mapper` resolves it to.
 #
 # Mapping rule:
-#     account32 = blake2_256("evm:" ++ h160_bytes)
+#     account32 = h160_bytes ++ 0xEE * 12
 #
-# Default SS58 prefix: 42 (this runtime's `SS58Prefix`).
+# An H160 that belongs to a substrate account resolves to that account
+# instead, which only the chain knows.
+#
+# Default SS58 prefix: 14240 (this runtime's `SS58Prefix`).
 #
 # Usage:
 #     scripts/h160-to-ss58.sh <0xH160> [ss58_prefix]
@@ -24,19 +27,14 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
 fi
 
 H160_RAW="${1#0x}"
-SS58_PREFIX="${2:-42}"
+SS58_PREFIX="${2:-14240}"
 
 if [[ ! "$H160_RAW" =~ ^[0-9a-fA-F]{40}$ ]]; then
     echo "Error: H160 must be 40 hex chars (with optional 0x prefix)" >&2
     exit 1
 fi
 
-PUBKEY_HEX=$(python3 - "$H160_RAW" <<'PY'
-import sys, hashlib
-h160 = bytes.fromhex(sys.argv[1])
-print(hashlib.blake2b(b"evm:" + h160, digest_size=32).hexdigest())
-PY
-)
+PUBKEY_HEX="${H160_RAW,,}eeeeeeeeeeeeeeeeeeeeeeee"
 
 echo "H160:               0x${H160_RAW,,}"
 echo "AccountId32 (hex):  0x${PUBKEY_HEX}"
