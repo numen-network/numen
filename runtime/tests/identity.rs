@@ -5,17 +5,16 @@
 mod common;
 
 use codec::Encode;
-use common::new_test_ext;
+use common::{new_test_ext, preset_ext};
 use frame_support::{assert_noop, assert_ok, traits::tokens::fungible::Mutate};
 use numen_runtime::{
 	configs::governance::pallet_custom_origins,
 	identity_info::{IdentityField, IdentityInfo},
 	AccountId, Balance, Balances, Identity, Runtime, RuntimeOrigin, UNIT,
 };
-use numen_runtime::{genesis_config_presets as presets, RuntimeGenesisConfig};
+use numen_runtime::genesis_config_presets as presets;
 use pallet_identity::{IdentityInformationProvider, Judgement};
 use sp_core::crypto::Ss58Codec;
-use sp_io::TestExternalities;
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::{
 	traits::{Hash, StaticLookup},
@@ -69,21 +68,6 @@ fn add_registrar_rejects_prime_signed_and_root() {
 		}
 		assert!(pallet_identity::Registrars::<Runtime>::get().is_empty());
 	});
-}
-
-/// Chain state as a node would build it from `preset`.
-fn preset_ext(preset: &str) -> TestExternalities {
-	let mut config = serde_json::to_value(RuntimeGenesisConfig::default()).unwrap();
-	let patch = presets::get_preset(&preset.into()).expect("preset exists");
-	sc_chain_spec::json_merge(&mut config, serde_json::from_slice(&patch).unwrap());
-	let mut ext = TestExternalities::default();
-	ext.execute_with(|| {
-		frame_support::genesis_builder_helper::build_state::<RuntimeGenesisConfig>(
-			serde_json::to_vec(&config).unwrap(),
-		)
-		.expect("preset builds");
-	});
-	ext
 }
 
 #[test]
