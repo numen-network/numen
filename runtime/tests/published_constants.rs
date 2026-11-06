@@ -7,7 +7,7 @@
 mod common;
 
 use codec::Decode;
-use common::new_test_ext;
+use common::{new_test_ext, preset_ext};
 use frame_support::{
 	__private::metadata::{RuntimeMetadata, RuntimeMetadataPrefixed},
 	assert_ok,
@@ -15,12 +15,16 @@ use frame_support::{
 		tokens::fungible::{InspectHold, Mutate},
 		EnsureOrigin, OriginTrait,
 	},
+	weights::Weight,
 };
 use numen_runtime::{
+	balances_erc20::IBalancesErc20,
 	configs::governance::{pallet_custom_origins, TracksInfo, TreasurySpender},
-	Balance, Balances, Preimage, Runtime, RuntimeHoldReason, RuntimeOrigin, UNIT,
+	Balance, Balances, Preimage, Revive, Runtime, RuntimeHoldReason, RuntimeOrigin, UNIT,
 };
 use pallet_referenda::TracksInfo as _;
+use pallet_revive::{precompiles::alloy::sol_types::SolCall, ExecConfig, TransactionLimits};
+use sp_core::{H160, U256};
 use sp_keyring::Sr25519Keyring;
 
 const FUNDS: Balance = 10_000 * UNIT;
@@ -128,4 +132,31 @@ fn published_engine_is_the_one_the_digest_carries() {
 		.expect("Engine is published as four bytes");
 
 	assert_eq!(engine, sp_consensus_pow::POW_ENGINE_ID);
+}
+
+/// A wallet builds its withdraw call against this address and an indexer
+/// filters it out of token listings, so the published copy has to be the
+/// address the token answers at.
+#[test]
+fn published_balances_erc20_is_where_the_token_answers() {
+	let address: H160 = Decode::decode(&mut &published("Precompiles", "BalancesErc20")[..])
+		.expect("BalancesErc20 is published as a twenty byte address");
+
+	preset_ext(sp_genesis_builder::DEV_RUNTIME_PRESET).execute_with(|| {
+		let output = Revive::bare_call(
+			RuntimeOrigin::signed(Sr25519Keyring::Alice.to_account_id()),
+			address,
+			U256::zero(),
+			TransactionLimits::WeightAndDeposit {
+				weight_limit: Weight::from_parts(500_000_000_000, 5 * 1024 * 1024),
+				deposit_limit: UNIT,
+			},
+			IBalancesErc20::nameCall {}.abi_encode(),
+			&ExecConfig::new_substrate_tx(),
+		)
+		.result
+		.expect("the call executes");
+
+		assert_eq!(IBalancesErc20::nameCall::abi_decode_returns(&output.data).unwrap(), "Numen");
+	});
 }
