@@ -1,5 +1,9 @@
 //! Storage migrations run by the next runtime upgrade.
 
+mod frontier;
+
+pub use frontier::{frontier_storage, revive_storage, FrontierToRevive};
+
 use frame_support::{traits::OnRuntimeUpgrade, weights::Weight};
 use pallet_transaction_payment::{Multiplier, NextFeeMultiplier};
 use sp_runtime::{FixedPointNumber, Saturating};
