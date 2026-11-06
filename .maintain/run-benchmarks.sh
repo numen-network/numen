@@ -29,6 +29,7 @@ fi
 # stays usable on its own. Everything else lands under runtime/src/weights.
 declare -A OWN=(
 	[pallet_difficulty]=pallets/difficulty/src/weights.rs
+	[pallet_evm_claims]=pallets/evm-claims/src/weights.rs
 	[pallet_prime]=pallets/prime/src/weights.rs
 	[pallet_reward]=pallets/reward/src/weights.rs
 	[pallet_validator]=pallets/validator/src/weights.rs

@@ -13,6 +13,7 @@ members = [
     "consensus/sc-consensus-pow",
     "node",
     "pallets/difficulty",
+    "pallets/evm-claims",
     "pallets/prime",
     "pallets/reward",
     "pallets/validator",
@@ -26,6 +27,7 @@ poscan = { path = "./consensus/poscan", default-features = false }
 poscan-pow = { path = "./consensus/poscan-pow", default-features = false }
 obj-asteroid = { path = "./consensus/obj-asteroid", default-features = false }
 pallet-difficulty = { path = "./pallets/difficulty", default-features = false }
+pallet-evm-claims = { path = "./pallets/evm-claims", default-features = false }
 pallet-prime = { path = "./pallets/prime", default-features = false }
 pallet-reward = { path = "./pallets/reward", default-features = false }
 pallet-validator = { path = "./pallets/validator", default-features = false }
