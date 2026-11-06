@@ -52,8 +52,6 @@ cumulus-primitives-proof-size-hostfunction.default-features = true
 cumulus-primitives-proof-size-hostfunction.workspace = true
 sc-network.default-features = true
 sc-network.workspace = true
-sc-network-sync.default-features = true
-sc-network-sync.workspace = true
 sc-offchain.default-features = true
 sc-offchain.workspace = true
 sc-rpc.default-features = true
@@ -97,18 +95,6 @@ substrate-frame-rpc-system.default-features = true
 substrate-frame-rpc-system.workspace = true
 poscan-pow.workspace = true
 poscan.workspace = true
-
-# Frontier (Ethereum compatibility) — node-side RPC stack.
-fc-api.workspace = true
-fc-consensus.workspace = true
-fc-db.workspace = true
-fc-mapping-sync.workspace = true
-fc-rpc.workspace = true
-fc-rpc-core.workspace = true
-fc-storage.workspace = true
-fp-rpc = { workspace = true, default-features = true }
-fp-evm = { workspace = true, default-features = true }
-pallet-ethereum = { workspace = true, default-features = true }
 
 [dev-dependencies]
 tokio = { features = ["rt", "macros"], workspace = true }

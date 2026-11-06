@@ -8,10 +8,8 @@ pub const MAX_TIMESTAMP_DRIFT_MS: u64 = 2_000;
 ///
 /// Anything else yields `None`, leaving the block with no clock for its difficulty.
 pub fn timestamp_from_inherent(encoded: &[u8]) -> Option<u64> {
-	// `fp_self_contained::UncheckedExtrinsic` wraps `generic::UncheckedExtrinsic`,
-	// hence the `.0`.
 	let extrinsic = UncheckedExtrinsic::decode(&mut &encoded[..]).ok()?;
-	match extrinsic.0.function {
+	match extrinsic.function {
 		RuntimeCall::Timestamp(pallet_timestamp::Call::set { now }) => Some(now),
 		_ => None,
 	}

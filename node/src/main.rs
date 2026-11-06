@@ -6,7 +6,6 @@ mod benchmarking;
 mod chain_spec;
 mod cli;
 mod command;
-mod eth;
 mod mining_rpc;
 mod object_rpc;
 mod rpc;

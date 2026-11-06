@@ -1,13 +1,10 @@
-//! ProxyType filter wiring. NonTransfer fences off every fund moving entry
-//! including the EVM ones, Governance admits only the governance pallets, and
-//! pallet-proxy enforces the filter at dispatch.
+//! ProxyType filter wiring. NonTransfer fences off every fund moving entry,
+//! Governance admits only the governance pallets, and pallet-proxy enforces the
+//! filter at dispatch.
 
 mod common;
 
 use common::new_test_ext;
-use ethereum::{
-	legacy::TransactionSignature, LegacyTransaction, TransactionAction, TransactionV3,
-};
 use frame_support::{
 	assert_ok,
 	traits::{tokens::fungible::Mutate, InstanceFilter},
@@ -16,7 +13,6 @@ use numen_runtime::{
 	configs::ProxyType, AccountId, Balances, Proxy, Runtime, RuntimeCall, RuntimeOrigin, System,
 	UNIT,
 };
-use sp_core::{H160, H256, U256};
 use sp_keyring::Sr25519Keyring;
 use sp_runtime::traits::StaticLookup;
 
@@ -28,26 +24,6 @@ fn transfer_call(dest: &AccountId) -> RuntimeCall {
 	RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive {
 		dest: src(dest),
 		value: UNIT,
-	})
-}
-
-fn evm_withdraw_call() -> RuntimeCall {
-	RuntimeCall::EVM(pallet_evm::Call::withdraw { address: H160::zero(), value: UNIT })
-}
-
-fn ethereum_transact_call() -> RuntimeCall {
-	let signature = TransactionSignature::new(27, H256::repeat_byte(0x01), H256::repeat_byte(0x01))
-		.expect("dummy legacy signature is within range");
-	RuntimeCall::Ethereum(pallet_ethereum::Call::transact {
-		transaction: TransactionV3::Legacy(LegacyTransaction {
-			nonce: U256::zero(),
-			gas_price: U256::zero(),
-			gas_limit: U256::from(21_000),
-			action: TransactionAction::Call(H160::zero()),
-			value: U256::zero(),
-			input: Vec::new(),
-			signature,
-		}),
 	})
 }
 
@@ -99,12 +75,7 @@ fn governance_whitelist(voter: &AccountId) -> Vec<RuntimeCall> {
 #[test]
 fn non_transfer_blocks_every_fund_moving_entry() {
 	let dest = Sr25519Keyring::Bob.to_account_id();
-	for call in [
-		transfer_call(&dest),
-		evm_withdraw_call(),
-		ethereum_transact_call(),
-		vested_transfer_call(&dest),
-	] {
+	for call in [transfer_call(&dest), vested_transfer_call(&dest)] {
 		assert!(
 			!ProxyType::NonTransfer.filter(&call),
 			"NonTransfer must block {call:?}",
@@ -133,7 +104,7 @@ fn governance_admits_only_the_governance_whitelist() {
 	for call in governance_whitelist(&who) {
 		assert!(ProxyType::Governance.filter(&call), "Governance must admit {call:?}");
 	}
-	for call in [transfer_call(&who), evm_withdraw_call(), remark_call()] {
+	for call in [transfer_call(&who), remark_call()] {
 		assert!(!ProxyType::Governance.filter(&call), "Governance must block {call:?}");
 	}
 }

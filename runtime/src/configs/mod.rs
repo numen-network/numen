@@ -159,8 +159,7 @@ parameter_types! {
 	/// full blocks then reach `MaximumMultiplier` in under three days.
 	pub AdjustmentVariable: Multiplier = Multiplier::saturating_from_rational(125, 1_000_000);
 	/// Floor kept symmetric with `MaximumMultiplier`. The stock 1e-6 lets an
-	/// idle chain erode the fee anchor by six orders of magnitude, far looser
-	/// than the 2x floor `pallet-base-fee` holds on the EVM side.
+	/// idle chain erode the fee anchor by six orders of magnitude.
 	pub MinimumMultiplier: Multiplier = Multiplier::saturating_from_rational(1, 10u128);
 	pub MaximumMultiplier: Multiplier = Multiplier::saturating_from_integer(10);
 }
@@ -250,11 +249,10 @@ impl<R: frame_system::Config> MultiplierUpdate for FullnessFeeUpdate<R> {
 /// so a miner paying itself to fill a block gets back less than it puts in.
 pub const MINER_FEE_SHARE: Percent = Percent::from_percent(20);
 
-/// Splits substrate fees and the EVM base fee between the treasury and the
-/// block's PoW miner, resolved through [`PowFindAuthor`] via
-/// `pallet-authorship`. Tips reach the miner whole. Blocks without a PoW
-/// author digest (never produced by the canonical chain) pay everything to
-/// the treasury.
+/// Splits transaction fees between the treasury and the block's PoW miner,
+/// resolved through [`PowFindAuthor`] via `pallet-authorship`. Tips reach the
+/// miner whole. Blocks without a PoW author digest (never produced by the
+/// canonical chain) pay everything to the treasury.
 pub struct DealWithFees;
 
 impl OnUnbalanced<Credit<AccountId, Balances>> for DealWithFees {
@@ -282,16 +280,13 @@ impl OnUnbalanced<Credit<AccountId, Balances>> for DealWithFees {
 	}
 }
 
-/// Price of one weight unit in smallest units, pinned to what the EVM path
-/// charges for the same compute. `WeightPerGas` is 20,000 and the base fee is
-/// 1000 gwei, so a gas unit costs 1e12 and a weight unit is worth 1e12 / 20,000.
-/// Any other value makes one path a cheap bypass around the other.
+/// Price of one weight unit in smallest units. A second of reference compute
+/// costs 50 NUMN, so filling a block's normal class costs 75 NUMN.
 pub const WEIGHT_FEE: Balance = 50_000_000;
 
-/// Price of one encoded byte, mirroring Ethereum's 16 gas per non-zero calldata
-/// byte at the same 1000 gwei base fee. Keeps a length-full block within the
-/// same order as a weight-full one so neither dimension is the cheap one to
-/// abuse.
+/// Price of one encoded byte. Ethereum charges 16 gas per non-zero calldata
+/// byte, priced here at 1000 gwei. Keeps a length-full block within the same
+/// order as a weight-full one so neither dimension is the cheap one to abuse.
 pub const LENGTH_FEE: Balance = 16_000_000_000_000;
 
 /// Byte price carrying the same congestion multiplier the weight price pays.
@@ -386,16 +381,13 @@ impl InstanceFilter<RuntimeCall> for ProxyType {
 	fn filter(&self, c: &RuntimeCall) -> bool {
 		match self {
 			ProxyType::Any => true,
-			// EVM entry points move native balance as well, so they are
-			// fenced off together with direct transfers. Nested calls in a
-			// utility batch inherit this filter through the origin.
-			// `vested_transfer` is the only vesting call that moves funds, the
-			// rest only rewrite locks on an account that already holds them.
+			// Nested calls in a utility batch inherit this filter through the
+			// origin. `vested_transfer` is the only vesting call that moves
+			// funds, the rest only rewrite locks on an account that already
+			// holds them.
 			ProxyType::NonTransfer => !matches!(
 				c,
 				RuntimeCall::Balances(..)
-					| RuntimeCall::EVM(..)
-					| RuntimeCall::Ethereum(..)
 					| RuntimeCall::Vesting(pallet_vesting::Call::vested_transfer { .. })
 			),
 			ProxyType::Governance => matches!(
