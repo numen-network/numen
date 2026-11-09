@@ -7,29 +7,41 @@
 
 use std::{
 	error::Error,
+	pin::pin,
 	sync::{Arc, OnceLock},
+	time::Duration,
 };
 
 use futures::{future, lock::Mutex};
 use jsonrpsee::{
 	core::{
-		client::{ClientT, Error as ClientError, SubscriptionClientT},
+		client::{ClientT, Error as ClientError, Subscription, SubscriptionClientT},
 		params::ArrayParams,
 		RegisterMethodError, SubscriptionResult,
 	},
 	http_client::{HttpClient, HttpClientBuilder},
 	types::{error::INTERNAL_ERROR_CODE, ErrorObjectOwned, Params},
 	ws_client::{WsClient, WsClientBuilder},
-	PendingSubscriptionSink, RpcModule, SubscriptionMessage,
+	PendingSubscriptionSink, RpcModule, SubscriptionMessage, SubscriptionSink,
 };
 use serde_json::Value;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::{generic::DigestItem, traits::Header as _};
+use tokio::time::sleep;
 
 use numen_runtime::opaque::Block;
 
 /// Engine id of the digest Frontier put in every block it built.
 const FRONTIER_ENGINE_ID: [u8; 4] = *b"fron";
+
+/// How often a subscription opened before the switch checks for it.
+const SWITCH_POLL: Duration = Duration::from_secs(2);
+
+/// How long the node waits before it reopens a subscription. The wait
+/// doubles with each try, up to `RETRY_CAP`, and resets once a notification
+/// gets through.
+const RETRY_FIRST: Duration = Duration::from_secs(1);
+const RETRY_CAP: Duration = Duration::from_secs(8);
 
 /// Where the block a method asks about sits in its parameters.
 #[derive(Clone, Copy)]
@@ -138,6 +150,13 @@ impl Switch {
 		}
 		Some(*self.block.get_or_init(|| revive))
 	}
+
+	/// Waits until the chain has a block pallet-revive built.
+	async fn reached(&self) {
+		while self.block().is_none() {
+			sleep(SWITCH_POLL).await;
+		}
+	}
 }
 
 /// A JSON-RPC server the node hands calls to.
@@ -196,6 +215,32 @@ fn upstream_error(error: ClientError) -> ErrorObjectOwned {
 			format!("Ethereum RPC upstream failed: {other}"),
 			None::<()>,
 		),
+	}
+}
+
+/// The subscription the node holds on an upstream for one subscriber.
+struct Feed {
+	notifications: Subscription<Value>,
+	/// Whether the switch had come when the feed was opened.
+	switched: bool,
+}
+
+impl Feed {
+	/// The next notification. None once the upstream ends the subscription, or
+	/// once the switch comes for a feed opened before it.
+	async fn next(&mut self, switch: &Switch) -> Option<Value> {
+		let switched = self.switched;
+		let switch_came = async move {
+			if switched {
+				future::pending().await
+			} else {
+				switch.reached().await
+			}
+		};
+		match future::select(pin!(self.notifications.next()), pin!(switch_came)).await {
+			future::Either::Left((Some(Ok(item)), _)) => Some(item),
+			_ => None,
+		}
 	}
 }
 
@@ -317,27 +362,52 @@ impl EthForward {
 	}
 
 	async fn subscribe(&self, params: Params<'static>, pending: PendingSubscriptionSink) -> SubscriptionResult {
-		let upstream =
-			if self.switch.block().is_some() { &self.revive } else { self.before_switch() };
 		let params: Vec<Value> = params.parse().unwrap_or_default();
-		let subscription = async {
-			let client = upstream.ws().await?;
-			client.subscribe::<Value, _>("eth_subscribe", array(&params), "eth_unsubscribe").await
-		};
-		let mut notifications = match subscription.await {
-			Ok(notifications) => notifications,
+		let feed = match self.open(&params).await {
+			Ok(feed) => feed,
 			Err(error) => {
 				pending.reject(upstream_error(error)).await;
 				return Ok(());
 			},
 		};
 		let sink = pending.accept().await?;
+		match future::select(pin!(self.relay(&sink, &params, feed)), pin!(sink.closed())).await {
+			future::Either::Left((result, _)) => result,
+			future::Either::Right(_) => Ok(()),
+		}
+	}
+
+	/// Opens the subscription on the upstream that takes new ones.
+	async fn open(&self, params: &[Value]) -> Result<Feed, ClientError> {
+		let switched = self.switch.block().is_some();
+		let upstream = if switched { &self.revive } else { self.before_switch() };
+		let client = upstream.ws().await?;
+		let notifications = client.subscribe("eth_subscribe", array(params), "eth_unsubscribe").await?;
+		Ok(Feed { notifications, switched })
+	}
+
+	/// Passes every notification on to the subscriber, reopening the feed
+	/// whenever it stops.
+	async fn relay(&self, sink: &SubscriptionSink, params: &[Value], mut feed: Feed) -> SubscriptionResult {
+		let mut wait = RETRY_FIRST;
 		loop {
-			let next = match future::select(Box::pin(notifications.next()), Box::pin(sink.closed())).await {
-				future::Either::Left((Some(Ok(item)), _)) => item,
-				_ => return Ok(()),
-			};
-			sink.send(SubscriptionMessage::from_json(&next)?).await?;
+			while let Some(item) = feed.next(&self.switch).await {
+				sink.send(SubscriptionMessage::from_json(&item)?).await?;
+				wait = RETRY_FIRST;
+			}
+			feed = self.reopen(params, &mut wait).await;
+		}
+	}
+
+	/// Reopens the subscription. Waits before every try and keeps trying until
+	/// an upstream takes it.
+	async fn reopen(&self, params: &[Value], wait: &mut Duration) -> Feed {
+		loop {
+			sleep(*wait).await;
+			*wait = (*wait * 2).min(RETRY_CAP);
+			if let Ok(feed) = self.open(params).await {
+				return feed;
+			}
 		}
 	}
 }
@@ -382,6 +452,7 @@ mod tests {
 		MethodsError,
 	};
 	use serde_json::json;
+	use std::sync::atomic::{AtomicU64, Ordering};
 
 	/// A chain whose blocks from `switch` on carry no Frontier digest.
 	struct FakeChain {
@@ -392,6 +463,22 @@ mod tests {
 	impl Chain for FakeChain {
 		fn best_number(&self) -> u64 {
 			self.best
+		}
+
+		fn built_by_frontier(&self, number: u64) -> bool {
+			number < self.switch
+		}
+	}
+
+	/// A [`FakeChain`] whose head the test moves.
+	struct MovingChain {
+		best: Arc<AtomicU64>,
+		switch: u64,
+	}
+
+	impl Chain for MovingChain {
+		fn best_number(&self) -> u64 {
+			self.best.load(Ordering::Relaxed)
 		}
 
 		fn built_by_frontier(&self, number: u64) -> bool {
@@ -464,7 +551,7 @@ mod tests {
 		_servers: Vec<ServerHandle>,
 	}
 
-	async fn setup(chain: FakeChain, with_frozen: bool) -> Setup {
+	async fn setup(chain: impl Chain + 'static, with_frozen: bool) -> Setup {
 		let (eth_rpc, eth_rpc_server) = upstream("eth-rpc", 100).await;
 		let (frozen, frozen_server) = upstream("frozen", 100).await;
 		let forward =
@@ -475,6 +562,11 @@ mod tests {
 	/// The chain switched to pallet-revive at block 10.
 	fn switched() -> FakeChain {
 		FakeChain { best: 15, switch: 10 }
+	}
+
+	/// Awaits `future`, failing the test after 30 seconds instead of hanging.
+	async fn soon<T>(future: impl Future<Output = T>) -> T {
+		tokio::time::timeout(Duration::from_secs(30), future).await.expect("timed out")
 	}
 
 	async fn answered_by(setup: &Setup, method: &str, params: Value) -> String {
@@ -625,10 +717,10 @@ mod tests {
 		}
 	}
 
-	/// The upstream goes down and comes back on the same address. The
-	/// subscription opened afterwards reaches it over a fresh connection.
+	/// The upstream stays down past the first retry, then comes back on the
+	/// same address. The open subscription carries on over a fresh connection.
 	#[tokio::test]
-	async fn a_subscription_after_the_upstream_restarted_reconnects() {
+	async fn a_subscription_outlives_an_upstream_restart() {
 		let (eth_rpc, server) = upstream("eth-rpc", 1).await;
 		let module = EthForward::new(switched(), &eth_rpc, None, RESPONSE_LIMIT).unwrap().into_rpc().unwrap();
 		let mut heads = module.subscribe_unbounded("eth_subscribe", array(&[json!("newHeads")])).await.unwrap();
@@ -638,11 +730,33 @@ mod tests {
 
 		server.stop().unwrap();
 		server.stopped().await;
-		assert!(heads.next::<Value>().await.is_none(), "the subscription ends with its upstream");
+		sleep(RETRY_FIRST * 2).await;
 		let _server = serve("eth-rpc", eth_rpc.strip_prefix("http://").unwrap(), 1).await;
 
-		let mut heads = module.subscribe_unbounded("eth_subscribe", array(&[json!("newHeads")])).await.unwrap();
-		let (head, _) = heads.next::<Value>().await.unwrap().unwrap();
+		let (head, _) = soon(heads.next::<Value>()).await.unwrap().unwrap();
+		assert_eq!(head, json!({ "number": 1, "from": "eth-rpc" }));
+	}
+
+	/// The head moves from the last Frontier block onto the switch while the
+	/// subscription sits on the frozen node.
+	#[tokio::test]
+	async fn a_subscription_opened_before_the_switch_moves_to_eth_rpc() {
+		let switch = 10;
+		let best = Arc::new(AtomicU64::new(switch - 1));
+		let setup = setup(MovingChain { best: best.clone(), switch }, true).await;
+		let mut heads = setup
+			.module
+			.subscribe_unbounded("eth_subscribe", array(&[json!("newHeads")]))
+			.await
+			.unwrap();
+		for number in 1..=2 {
+			let (head, _) = heads.next::<Value>().await.unwrap().unwrap();
+			assert_eq!(head, json!({ "number": number, "from": "frozen" }));
+		}
+
+		best.store(switch, Ordering::Relaxed);
+
+		let (head, _) = soon(heads.next::<Value>()).await.unwrap().unwrap();
 		assert_eq!(head, json!({ "number": 1, "from": "eth-rpc" }));
 	}
 
