@@ -25,7 +25,7 @@ frame-system.default-features = true
 frame-system.workspace = true
 futures = { features = ["thread-pool"], workspace = true }
 jsonrpsee = { features = ["http-client", "macros", "server", "ws-client"], workspace = true }
-tokio = { features = ["rt"], workspace = true }
+tokio = { features = ["rt", "time"], workspace = true }
 log.workspace = true
 serde = { workspace = true, default-features = true }
 pallet-transaction-payment-rpc.default-features = true
