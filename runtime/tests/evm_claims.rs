@@ -6,6 +6,7 @@
 
 mod common;
 
+use codec::Encode;
 use common::preset_ext;
 use frame_support::traits::fungible::{Inspect, Mutate};
 use frame_system::offchain::CreateAuthorizedTransaction;
@@ -14,7 +15,8 @@ use numen_runtime::{
 		evm::{ClaimFee, EvmChainId},
 		TreasuryAccount,
 	},
-	AccountId, Balances, Executive, Revive, Runtime, RuntimeCall, System, UncheckedExtrinsic, UNIT,
+	AccountId, Balances, Executive, Revive, Runtime, RuntimeCall, System, TransactionPayment,
+	UncheckedExtrinsic, UNIT,
 };
 use pallet_revive::{
 	evm::{Account, GenericTransaction},
@@ -100,6 +102,17 @@ fn a_claim_passes_the_pool_and_pays_its_fee_from_what_it_moves() {
 		assert_eq!(System::account_nonce(&account), 7);
 		assert_eq!(Balances::total_issuance(), issuance + 1, "only the existential deposit is new");
 		assert_eq!(Balances::balance(&TreasuryAccount::get()), treasury + fee);
+	});
+}
+
+/// The quote includes the weight of the transaction extensions.
+#[test]
+fn a_claim_costs_what_the_chain_quotes_for_it() {
+	dev_ext().execute_with(|| {
+		let xt = claim(frontier_user().address());
+		let len = xt.encoded_size() as u32;
+
+		assert_eq!(ClaimFee::get(), TransactionPayment::query_info(xt, len).partial_fee);
 	});
 }
 

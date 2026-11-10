@@ -118,12 +118,11 @@ pub struct ClaimFee;
 impl Get<Balance> for ClaimFee {
 	fn get() -> Balance {
 		let call = RuntimeCall::EvmClaims(pallet_evm_claims::Call::claim { address: H160::zero() });
-		let info = call.get_dispatch_info();
-		let len = <Runtime as CreateAuthorizedTransaction<RuntimeCall>>::create_authorized_transaction(
-			call,
-		)
-		.encoded_size();
-		TransactionPayment::compute_fee(len as u32, &info, 0)
+		let xt =
+			<Runtime as CreateAuthorizedTransaction<RuntimeCall>>::create_authorized_transaction(
+				call,
+			);
+		TransactionPayment::compute_fee(xt.encoded_size() as u32, &xt.get_dispatch_info(), 0)
 	}
 }
 
