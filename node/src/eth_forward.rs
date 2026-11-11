@@ -11,6 +11,7 @@ use std::{
 	time::Duration,
 };
 
+use fc_rpc_core::types::BlockNumberOrHash;
 use futures::{future, lock::Mutex};
 use jsonrpsee::{
 	core::{
@@ -23,6 +24,7 @@ use jsonrpsee::{
 	ws_client::{WsClient, WsClientBuilder},
 	PendingSubscriptionSink, RpcModule, SubscriptionMessage, SubscriptionSink,
 };
+use serde::Deserialize;
 use serde_json::Value;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::{generic::DigestItem, traits::Header as _};
@@ -397,29 +399,26 @@ impl EthForward {
 /// Without a switch yet every numbered block is Frontier's.
 fn side(block: Option<&Value>, switch: Option<u64>) -> Side {
 	match block {
-		Some(Value::String(tag)) if tag == "earliest" => Side::Frontier,
 		Some(Value::String(hash)) if hash.len() == 66 => Side::Hash,
-		Some(Value::String(tag)) => match parse_quantity(tag) {
+		Some(Value::Object(block)) if block.contains_key("blockHash") => Side::Hash,
+		Some(Value::Object(block)) => side(block.get("blockNumber"), switch),
+		Some(block) => match block_number(block) {
 			Some(number) if switch.is_none_or(|switch| number < switch) => Side::Frontier,
 			_ => Side::Revive,
 		},
-		Some(Value::Object(block)) if block.contains_key("blockHash") => Side::Hash,
-		Some(Value::Object(block)) => side(block.get("blockNumber"), switch),
-		_ => Side::Revive,
+		None => Side::Revive,
 	}
 }
 
 /// The block number a filter bound stands for, the head being the highest.
 fn number(bound: Option<&Value>) -> u64 {
-	match bound {
-		Some(Value::String(tag)) if tag == "earliest" => 0,
-		Some(Value::String(tag)) => parse_quantity(tag).unwrap_or(u64::MAX),
-		_ => u64::MAX,
-	}
+	bound.and_then(block_number).unwrap_or(u64::MAX)
 }
 
-fn parse_quantity(value: &str) -> Option<u64> {
-	u64::from_str_radix(value.strip_prefix("0x")?, 16).ok()
+/// The block number `block` stands for, as the Frontier history reads it.
+/// Decimal strings and JSON numbers count. eth-rpc takes neither.
+fn block_number(block: &Value) -> Option<u64> {
+	BlockNumberOrHash::deserialize(block).ok()?.to_min_block_num()
 }
 
 fn quantity(number: u64) -> Value {
@@ -550,6 +549,12 @@ mod tests {
 		FakeChain { best: 15, switch: 100 }
 	}
 
+	/// The chain switched at block 17. A decimal 16 read as hex would land past
+	/// the switch.
+	fn switched_at_17() -> FakeChain {
+		FakeChain { best: 20, switch: 17 }
+	}
+
 	/// Awaits `future`, failing the test after 30 seconds instead of hanging.
 	async fn soon<T>(future: impl Future<Output = T>) -> T {
 		tokio::time::timeout(Duration::from_secs(30), future).await.expect("timed out")
@@ -584,6 +589,19 @@ mod tests {
 		}
 		assert_eq!(answered_by(&setup, "eth_call", json!([{ "to": address }])).await, "eth-rpc");
 		assert_eq!(answered_by(&setup, "eth_sendRawTransaction", json!(["0x02"])).await, "eth-rpc");
+	}
+
+	#[tokio::test]
+	async fn a_decimal_or_json_number_block_goes_to_the_side_that_holds_it() {
+		let setup = setup(switched_at_17(), true).await;
+		let address = "0x00000000000000000000000000000000000000aa";
+
+		for block in [json!("16"), json!(16)] {
+			assert_eq!(answered_by(&setup, "eth_getBalance", json!([address, block])).await, "frontier", "{block}");
+		}
+		for block in [json!("17"), json!(17)] {
+			assert_eq!(answered_by(&setup, "eth_getBalance", json!([address, block])).await, "eth-rpc", "{block}");
+		}
 	}
 
 	#[tokio::test]
@@ -638,6 +656,22 @@ mod tests {
 
 		assert!(early.iter().all(|log| log["from"] == "frontier"));
 		assert!(late.iter().all(|log| log["from"] == "eth-rpc"));
+	}
+
+	#[tokio::test]
+	async fn logs_bounded_by_decimal_or_json_number_blocks_before_the_switch_stay_in_the_node() {
+		let setup = setup(switched_at_17(), true).await;
+
+		let logs: Vec<Value> = setup
+			.module
+			.call("eth_getLogs", array(&[json!({ "fromBlock": 15, "toBlock": "16" })]))
+			.await
+			.unwrap();
+
+		assert_eq!(
+			logs,
+			[json!({ "blockNumber": "0xf", "from": "frontier" }), json!({ "blockNumber": "0x10", "from": "frontier" })],
+		);
 	}
 
 	#[tokio::test]
