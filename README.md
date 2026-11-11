@@ -139,8 +139,8 @@ The node serves `eth_*`, `net_*` and `web3_*` on its own RPC port once it knows 
 ./eth-rpc --node-rpc-url ws://127.0.0.1:9944 --rpc-port 8545
 ```
 
-Blocks from before pallet-revive are answered by a node that still runs Frontier and stopped importing at the upgrade. Point `--frozen-eth-rpc` at it and calls about those blocks go there, as do calls about hashes eth-rpc does not know.
+eth-rpc knows only the blocks pallet-revive built. An archive node answers for the earlier ones itself, from its own state. It also looks up any hash eth-rpc does not know.
 
 ```bash
-./numen --chain mainnet-raw.json --eth-rpc http://127.0.0.1:8545 --frozen-eth-rpc http://<FROZEN_NODE>:9944
+./numen --chain mainnet-raw.json --state-pruning archive --eth-rpc http://127.0.0.1:8545
 ```

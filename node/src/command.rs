@@ -208,10 +208,7 @@ pub fn run() -> sc_cli::Result<()> {
 			};
 
 			let mining = miner_account.map(|miner| service::MiningConfig { miner, node_miner });
-			let eth_rpc = cli
-				.eth_rpc
-				.clone()
-				.map(|eth_rpc| service::EthRpcConfig { eth_rpc, frozen: cli.frozen_eth_rpc.clone() });
+			let eth_rpc = cli.eth_rpc.clone();
 
 			let runner = cli.create_runner(&cli.run)?;
 			runner.run_node_until_exit(|config| async move {

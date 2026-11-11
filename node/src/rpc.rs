@@ -49,6 +49,16 @@ pub struct MiningDeps {
 	pub protocol: String,
 }
 
+/// Dependencies for the Ethereum JSON-RPC methods.
+#[derive(Clone)]
+pub struct EthDeps {
+	/// eth-rpc server the methods are handed to.
+	pub eth_rpc: String,
+	/// What answers for the blocks Frontier built, on a node that keeps their
+	/// state.
+	pub frontier: Option<Arc<dyn crate::eth_forward::History>>,
+}
+
 /// Full client dependencies.
 pub struct FullDeps<C, P, B> {
 	/// The client instance to use.
@@ -59,9 +69,9 @@ pub struct FullDeps<C, P, B> {
 	pub grandpa: GrandpaDeps<B>,
 	/// External mining dependencies, present when the operator exposes the RPC.
 	pub mining: Option<MiningDeps>,
-	/// Servers that answer the Ethereum JSON-RPC methods, when the node serves
-	/// them.
-	pub eth_rpc: Option<crate::service::EthRpcConfig>,
+	/// Ethereum JSON-RPC dependencies, present when the node serves the
+	/// methods.
+	pub eth: Option<EthDeps>,
 	/// Response size limit of the node's RPC server in bytes. The Ethereum
 	/// forwarder caps its upstream answers at the same size.
 	pub max_response_size: u32,
@@ -87,7 +97,7 @@ where
 	use substrate_frame_rpc_system::{System, SystemApiServer};
 
 	let mut module = RpcModule::new(());
-	let FullDeps { client, pool, grandpa, mining, eth_rpc, max_response_size } = deps;
+	let FullDeps { client, pool, grandpa, mining, eth, max_response_size } = deps;
 	let GrandpaDeps {
 		shared_voter_state,
 		shared_authority_set,
@@ -114,12 +124,10 @@ where
 		module.merge(Mining::new(handle, miner, protocol).into_rpc())?;
 	}
 
-	if let Some(crate::service::EthRpcConfig { eth_rpc, frozen }) = eth_rpc {
+	if let Some(EthDeps { eth_rpc, frontier }) = eth {
 		use crate::eth_forward::{ClientChain, EthForward};
 		let chain = ClientChain(client.clone());
-		module.merge(
-			EthForward::new(chain, &eth_rpc, frozen.as_deref(), max_response_size)?.into_rpc()?,
-		)?;
+		module.merge(EthForward::new(chain, &eth_rpc, frontier, max_response_size)?.into_rpc()?)?;
 	}
 
 	// Model export needs only the client, so every node exposes it regardless of
