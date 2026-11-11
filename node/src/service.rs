@@ -13,7 +13,11 @@ use numen_runtime::{self, apis::RuntimeApi, opaque::Block, AccountId};
 use sp_core::{crypto::Ss58Codec, H256, U256};
 use std::{sync::{Arc, Mutex}, time::Duration};
 
-use crate::{eth_forward::History, frontier::Frontier, mining_rpc::ExternalMiner};
+use crate::{
+	eth_forward::History,
+	frontier::{ClientNode, Frontier},
+	mining_rpc::ExternalMiner,
+};
 
 /// The RPC size limits in [`Configuration`] are in megabytes.
 const MEGABYTE: u32 = 1024 * 1024;
@@ -51,6 +55,7 @@ pub type Service = sc_service::PartialComponents<
 		GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
 		LinkHalf<Block, FullClient, FullSelectChain>,
 		Option<Telemetry>,
+		sc_executor::WasmExecutor<HostFunctions>,
 	),
 >;
 
@@ -71,7 +76,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		sc_service::new_full_parts::<Block, RuntimeApi, _>(
 			config,
 			telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
-			executor,
+			executor.clone(),
 			vec![],
 		)?;
 	let client = Arc::new(client);
@@ -129,7 +134,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (grandpa_block_import, grandpa_link, telemetry),
+		other: (grandpa_block_import, grandpa_link, telemetry, executor),
 	})
 }
 
@@ -259,7 +264,7 @@ pub fn new_full<
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (grandpa_block_import, grandpa_link, mut telemetry),
+		other: (grandpa_block_import, grandpa_link, mut telemetry, executor),
 	} = new_partial(&config)?;
 
 	let mut net_config = sc_network::config::FullNetworkConfiguration::<
@@ -404,7 +409,8 @@ pub fn new_full<
 
 	// A node that keeps every state answers for the blocks Frontier built.
 	let eth = eth_rpc.map(|eth_rpc| {
-		let frontier = backend.requires_full_sync().then(|| Frontier::new(client.clone())).flatten().map(Arc::new);
+		let node = ClientNode { client: client.clone(), executor };
+		let frontier = backend.requires_full_sync().then(|| Frontier::new(Arc::new(node))).flatten().map(Arc::new);
 		if let Some(frontier) = frontier.clone() {
 			task_manager.spawn_handle().spawn_blocking("frontier-index", None, async move {
 				frontier.catch_up()
