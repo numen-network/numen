@@ -1,8 +1,9 @@
 //! Ethereum JSON-RPC answers for the blocks Frontier built.
 //!
-//! The node does not link Frontier. The state of each of those blocks still
-//! holds the runtime that built it. The node calls that runtime's Ethereum API
-//! by name and shapes the answers the way Frontier's RPC did.
+//! The node does not link Frontier. The runtime that built each of those
+//! blocks still sits in its parent's state. The node calls that runtime's
+//! Ethereum API by name on the block's own state, and shapes the answers the
+//! way Frontier's RPC did.
 
 mod execute;
 #[cfg(test)]
@@ -36,7 +37,7 @@ use numen_runtime::opaque::Block;
 use crate::eth_forward::History;
 pub use index::FRONTIER_ENGINE_ID;
 use index::Index;
-pub use node::Node;
+pub use node::{ClientNode, Node};
 use runtime::BlockData;
 
 /// The version of `EthereumRuntimeRPCApi` whose calls this module makes.
