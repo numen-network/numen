@@ -13,7 +13,7 @@ use numen_runtime::{self, apis::RuntimeApi, opaque::Block, AccountId};
 use sp_core::{crypto::Ss58Codec, H256, U256};
 use std::{sync::{Arc, Mutex}, time::Duration};
 
-use crate::mining_rpc::ExternalMiner;
+use crate::{eth_forward::History, frontier::Frontier, mining_rpc::ExternalMiner};
 
 /// The RPC size limits in [`Configuration`] are in megabytes.
 const MEGABYTE: u32 = 1024 * 1024;
@@ -138,16 +138,6 @@ type PowAlgo = PoScanAlgorithm<Block, FullClient>;
 /// Concrete mining worker handle type.
 type PowMiningHandle<L> = sc_consensus_pow::MiningHandle<Block, PowAlgo, L>;
 
-/// Servers the node hands the Ethereum JSON-RPC methods to.
-#[derive(Clone)]
-pub struct EthRpcConfig {
-	/// eth-rpc server.
-	pub eth_rpc: String,
-	/// Node that still runs Frontier and answers for the blocks before
-	/// pallet-revive.
-	pub frozen: Option<String>,
-}
-
 /// Operator mining configuration. The external mining RPC is always exposed.
 /// `node_miner` is the local scan thread count, zero when the node only relays
 /// work to external miners.
@@ -252,13 +242,14 @@ where
 	});
 }
 
-/// Builds a new service for a full client.
+/// Builds a new service for a full client. `eth_rpc` is the eth-rpc server the
+/// node hands the Ethereum JSON-RPC methods to.
 pub fn new_full<
 	N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
 >(
 	config: Configuration,
 	mining: Option<MiningConfig>,
-	eth_rpc: Option<EthRpcConfig>,
+	eth_rpc: Option<String>,
 ) -> Result<TaskManager, ServiceError> {
 	let sc_service::PartialComponents {
 		client,
@@ -411,6 +402,17 @@ pub fn new_full<
 			None
 		};
 
+	// A node that keeps every state answers for the blocks Frontier built.
+	let eth = eth_rpc.map(|eth_rpc| {
+		let frontier = backend.requires_full_sync().then(|| Frontier::new(client.clone())).flatten().map(Arc::new);
+		if let Some(frontier) = frontier.clone() {
+			task_manager.spawn_handle().spawn_blocking("frontier-index", None, async move {
+				frontier.catch_up()
+			});
+		}
+		crate::rpc::EthDeps { eth_rpc, frontier: frontier.map(|frontier| frontier as Arc<dyn History>) }
+	});
+
 	let rpc_extensions_builder = {
 		let client = client.clone();
 		let pool = transaction_pool.clone();
@@ -440,7 +442,7 @@ pub fn new_full<
 					finality_provider: finality_proof_provider.clone(),
 				},
 				mining,
-				eth_rpc: eth_rpc.clone(),
+				eth: eth.clone(),
 				max_response_size,
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)

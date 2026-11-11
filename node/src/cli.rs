@@ -22,11 +22,6 @@ pub struct Cli {
 	/// server.
 	#[arg(long, value_name = "URL")]
 	pub eth_rpc: Option<String>,
-
-	/// Node that still runs Frontier and answers for the blocks before
-	/// pallet-revive.
-	#[arg(long, value_name = "URL", requires = "eth_rpc")]
-	pub frozen_eth_rpc: Option<String>,
 }
 
 #[derive(Debug, clap::Subcommand)]

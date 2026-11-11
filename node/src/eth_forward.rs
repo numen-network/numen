@@ -1,9 +1,8 @@
 //! The Ethereum JSON-RPC namespaces on the node's own RPC port.
 //!
-//! eth-rpc answers for the blocks pallet-revive built. The blocks before them
-//! belong to a node that still runs Frontier and stopped importing at the
-//! upgrade. Calls about those blocks go there, and so do calls about a block or
-//! transaction hash eth-rpc does not know.
+//! eth-rpc answers for the blocks pallet-revive built. Frontier built the
+//! blocks before them. A node that keeps their state answers for those
+//! itself, and for any block or transaction hash eth-rpc does not know.
 
 use std::{
 	error::Error,
@@ -31,11 +30,7 @@ use tokio::time::sleep;
 
 use numen_runtime::opaque::Block;
 
-/// Engine id of the digest Frontier put in every block it built.
-const FRONTIER_ENGINE_ID: [u8; 4] = *b"fron";
-
-/// How often a subscription opened before the switch checks for it.
-const SWITCH_POLL: Duration = Duration::from_secs(2);
+use crate::frontier::FRONTIER_ENGINE_ID;
 
 /// How long the node waits before it reopens a subscription. The wait
 /// doubles with each try, up to `RETRY_CAP`, and resets once a notification
@@ -98,6 +93,11 @@ enum Side {
 	Hash,
 }
 
+/// Answers for the blocks Frontier built.
+pub trait History: Send + Sync {
+	fn call(&self, method: &str, params: &[Value]) -> Result<Value, ErrorObjectOwned>;
+}
+
 /// What the forwarder reads off the chain.
 pub trait Chain: Send + Sync {
 	fn best_number(&self) -> u64;
@@ -149,13 +149,6 @@ impl Switch {
 			}
 		}
 		Some(*self.block.get_or_init(|| revive))
-	}
-
-	/// Waits until the chain has a block pallet-revive built.
-	async fn reached(&self) {
-		while self.block().is_none() {
-			sleep(SWITCH_POLL).await;
-		}
 	}
 }
 
@@ -218,53 +211,38 @@ fn upstream_error(error: ClientError) -> ErrorObjectOwned {
 	}
 }
 
-/// The subscription the node holds on an upstream for one subscriber.
-struct Feed {
-	notifications: Subscription<Value>,
-	/// Whether the switch had come when the feed was opened.
-	switched: bool,
+/// Asks the Frontier history on a blocking thread. Answering runs the runtime.
+async fn past(
+	frontier: &Arc<dyn History>,
+	method: &'static str,
+	params: Vec<Value>,
+) -> Result<Value, ClientError> {
+	let frontier = frontier.clone();
+	let answer = tokio::task::spawn_blocking(move || frontier.call(method, &params)).await;
+	answer.map_err(|error| ClientError::Custom(error.to_string()))?.map_err(ClientError::Call)
 }
 
-impl Feed {
-	/// The next notification. None once the upstream ends the subscription, or
-	/// once the switch comes for a feed opened before it.
-	async fn next(&mut self, switch: &Switch) -> Option<Value> {
-		let switched = self.switched;
-		let switch_came = async move {
-			if switched {
-				future::pending().await
-			} else {
-				switch.reached().await
-			}
-		};
-		match future::select(pin!(self.notifications.next()), pin!(switch_came)).await {
-			future::Either::Left((Some(Ok(item)), _)) => Some(item),
-			_ => None,
-		}
-	}
-}
-
-/// Hands the Ethereum JSON-RPC methods to eth-rpc, or to the frozen Frontier
-/// node for blocks from before pallet-revive.
+/// Hands the Ethereum JSON-RPC methods to eth-rpc, or to the node's own
+/// Frontier history for blocks from before pallet-revive.
 pub struct EthForward {
 	revive: Upstream,
-	frontier: Option<Upstream>,
+	frontier: Option<Arc<dyn History>>,
 	switch: Switch,
 }
 
 impl EthForward {
-	/// `eth_rpc` is the eth-rpc server, `frozen` the Frontier node that answers
-	/// for the blocks before the switch. `max_response_size` is the node's own
-	/// response limit in bytes. A bigger answer could not be served anyway.
+	/// `eth_rpc` is the eth-rpc server, `frontier` what answers for the blocks
+	/// before the switch. `max_response_size` is the node's own response limit
+	/// in bytes. A bigger answer could not be served anyway.
 	pub fn new(
 		chain: impl Chain + 'static,
 		eth_rpc: &str,
-		frozen: Option<&str>,
+		frontier: Option<Arc<dyn History>>,
 		max_response_size: u32,
 	) -> Result<Self, Box<dyn Error + Send + Sync>> {
 		Ok(Self {
 			revive: Upstream::new(eth_rpc, max_response_size)?,
-			frontier: frozen.map(|url| Upstream::new(url, max_response_size)).transpose()?,
+			frontier,
 			switch: Switch { chain: Box::new(chain), block: OnceLock::new() },
 		})
 	}
@@ -291,65 +269,67 @@ impl EthForward {
 		Ok(module)
 	}
 
-	/// Where calls go before the switch, when Frontier still builds the blocks.
-	fn before_switch(&self) -> &Upstream {
-		self.frontier.as_ref().unwrap_or(&self.revive)
-	}
-
+	/// Before the switch every block is Frontier's, so a hash is looked up in
+	/// the node without asking eth-rpc first.
 	async fn forward(
 		&self,
-		method: &str,
+		method: &'static str,
 		route: Route,
 		params: Vec<Value>,
 	) -> Result<Value, ErrorObjectOwned> {
-		let Some(switch) = self.switch.block() else {
-			return self.before_switch().call(method, &params).await.map_err(upstream_error);
-		};
+		let switch = self.switch.block();
 		let side = match route {
 			Route::Head => Side::Revive,
 			Route::Hash => Side::Hash,
 			Route::Block(at) => side(params.get(at), switch),
 			Route::Logs => return self.logs(params, switch).await.map_err(upstream_error),
 		};
-		match (side, &self.frontier) {
-			(Side::Frontier, Some(frontier)) => frontier.call(method, &params).await,
-			(Side::Hash, Some(frontier)) => match self.revive.call(method, &params).await {
-				Ok(Value::Null) | Err(ClientError::Call(_)) => frontier.call(method, &params).await,
+		let Some(frontier) = &self.frontier else {
+			return self.revive.call(method, &params).await.map_err(upstream_error);
+		};
+		match (side, switch) {
+			(Side::Frontier, _) | (Side::Hash, None) => past(frontier, method, params).await,
+			(Side::Hash, Some(_)) => match self.revive.call(method, &params).await {
+				Ok(Value::Null) | Err(ClientError::Call(_)) => past(frontier, method, params).await,
 				answer => answer,
 			},
-			_ => self.revive.call(method, &params).await,
+			(Side::Revive, _) => self.revive.call(method, &params).await,
 		}
 		.map_err(upstream_error)
 	}
 
 	/// A filter that spans the switch is split there. The Frontier logs come
 	/// first, being from earlier blocks.
-	async fn logs(&self, params: Vec<Value>, switch: u64) -> Result<Value, ClientError> {
-		let (Some(frontier), Some(Value::Object(filter))) = (&self.frontier, params.first()) else {
-			return self.revive.call("eth_getLogs", &params).await;
+	async fn logs(&self, params: Vec<Value>, switch: Option<u64>) -> Result<Value, ClientError> {
+		const METHOD: &str = "eth_getLogs";
+		let (Some(frontier), Some(Value::Object(filter))) = (&self.frontier, params.first().cloned()) else {
+			return self.revive.call(METHOD, &params).await;
+		};
+		let Some(switch) = switch else {
+			return past(frontier, METHOD, params).await;
 		};
 		if filter.contains_key("blockHash") {
-			return match self.revive.call("eth_getLogs", &params).await {
-				Ok(Value::Array(logs)) if logs.is_empty() => frontier.call("eth_getLogs", &params).await,
-				Err(ClientError::Call(_)) => frontier.call("eth_getLogs", &params).await,
+			return match self.revive.call(METHOD, &params).await {
+				Ok(Value::Array(logs)) if logs.is_empty() => past(frontier, METHOD, params).await,
+				Err(ClientError::Call(_)) => past(frontier, METHOD, params).await,
 				answer => answer,
 			};
 		}
 		let from = number(filter.get("fromBlock"));
 		let to = number(filter.get("toBlock"));
 		if to < switch {
-			return frontier.call("eth_getLogs", &params).await;
+			return past(frontier, METHOD, params).await;
 		}
 		if from >= switch {
-			return self.revive.call("eth_getLogs", &params).await;
+			return self.revive.call(METHOD, &params).await;
 		}
 		let mut early = filter.clone();
 		early.insert("toBlock".into(), quantity(switch - 1));
-		let mut late = filter.clone();
+		let mut late = filter;
 		late.insert("fromBlock".into(), quantity(switch));
 		let (early, late) = future::join(
-			frontier.call("eth_getLogs", &[Value::Object(early)]),
-			self.revive.call("eth_getLogs", &[Value::Object(late)]),
+			past(frontier, METHOD, vec![Value::Object(early)]),
+			self.revive.call(METHOD, &[Value::Object(late)]),
 		)
 		.await;
 		match (early?, late?) {
@@ -377,21 +357,22 @@ impl EthForward {
 		}
 	}
 
-	/// Opens the subscription on the upstream that takes new ones.
-	async fn open(&self, params: &[Value]) -> Result<Feed, ClientError> {
-		let switched = self.switch.block().is_some();
-		let upstream = if switched { &self.revive } else { self.before_switch() };
-		let client = upstream.ws().await?;
-		let notifications = client.subscribe("eth_subscribe", array(params), "eth_unsubscribe").await?;
-		Ok(Feed { notifications, switched })
+	async fn open(&self, params: &[Value]) -> Result<Subscription<Value>, ClientError> {
+		let client = self.revive.ws().await?;
+		client.subscribe("eth_subscribe", array(params), "eth_unsubscribe").await
 	}
 
 	/// Passes every notification on to the subscriber, reopening the feed
 	/// whenever it stops.
-	async fn relay(&self, sink: &SubscriptionSink, params: &[Value], mut feed: Feed) -> SubscriptionResult {
+	async fn relay(
+		&self,
+		sink: &SubscriptionSink,
+		params: &[Value],
+		mut feed: Subscription<Value>,
+	) -> SubscriptionResult {
 		let mut wait = RETRY_FIRST;
 		loop {
-			while let Some(item) = feed.next(&self.switch).await {
+			while let Some(Ok(item)) = feed.next().await {
 				sink.send(SubscriptionMessage::from_json(&item)?).await?;
 				wait = RETRY_FIRST;
 			}
@@ -400,8 +381,8 @@ impl EthForward {
 	}
 
 	/// Reopens the subscription. Waits before every try and keeps trying until
-	/// an upstream takes it.
-	async fn reopen(&self, params: &[Value], wait: &mut Duration) -> Feed {
+	/// eth-rpc takes it.
+	async fn reopen(&self, params: &[Value], wait: &mut Duration) -> Subscription<Value> {
 		loop {
 			sleep(*wait).await;
 			*wait = (*wait * 2).min(RETRY_CAP);
@@ -413,12 +394,13 @@ impl EthForward {
 }
 
 /// The side of the switch `block` lies on, a missing block meaning the head.
-fn side(block: Option<&Value>, switch: u64) -> Side {
+/// Without a switch yet every numbered block is Frontier's.
+fn side(block: Option<&Value>, switch: Option<u64>) -> Side {
 	match block {
 		Some(Value::String(tag)) if tag == "earliest" => Side::Frontier,
 		Some(Value::String(hash)) if hash.len() == 66 => Side::Hash,
 		Some(Value::String(tag)) => match parse_quantity(tag) {
-			Some(number) if number < switch => Side::Frontier,
+			Some(number) if switch.is_none_or(|switch| number < switch) => Side::Frontier,
 			_ => Side::Revive,
 		},
 		Some(Value::Object(block)) if block.contains_key("blockHash") => Side::Hash,
@@ -452,7 +434,6 @@ mod tests {
 		MethodsError,
 	};
 	use serde_json::json;
-	use std::sync::atomic::{AtomicU64, Ordering};
 
 	/// A chain whose blocks from `switch` on carry no Frontier digest.
 	struct FakeChain {
@@ -470,49 +451,50 @@ mod tests {
 		}
 	}
 
-	/// A [`FakeChain`] whose head the test moves.
-	struct MovingChain {
-		best: Arc<AtomicU64>,
-		switch: u64,
-	}
-
-	impl Chain for MovingChain {
-		fn best_number(&self) -> u64 {
-			self.best.load(Ordering::Relaxed)
-		}
-
-		fn built_by_frontier(&self, number: u64) -> bool {
-			number < self.switch
-		}
-	}
-
-	/// The hash only the frozen node knows.
+	/// The hash only the Frontier history knows.
 	const OLD_HASH: &str = "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+	/// The transaction position the Frontier history has nothing at.
+	const OUT_OF_BOUNDS: &str = "0x9";
 
 	const RESPONSE_LIMIT: u32 = 1 << 20;
 
-	/// An upstream that names itself in every answer and returns one log per
-	/// block of a filter's range. Its subscriptions send two heads and stay
-	/// open until the subscriber leaves.
-	async fn upstream(name: &'static str, max_connections: u32) -> (String, ServerHandle) {
-		serve(name, "127.0.0.1:0", max_connections).await
+	/// What `name` answers. It names itself and returns one log per block of a
+	/// filter's range, up to block 20.
+	fn answer(name: &'static str, method: &str, params: Vec<Value>) -> Value {
+		if method != "eth_getLogs" {
+			return json!({ "from": name, "params": params });
+		}
+		let filter = &params[0];
+		let from = number(filter.get("fromBlock"));
+		let to = number(filter.get("toBlock")).min(20);
+		(from..=to).map(|block| json!({ "blockNumber": quantity(block), "from": name })).collect()
 	}
 
-	async fn serve(name: &'static str, addr: &str, max_connections: u32) -> (String, ServerHandle) {
+	struct FakeHistory;
+
+	impl History for FakeHistory {
+		fn call(&self, method: &str, params: &[Value]) -> Result<Value, ErrorObjectOwned> {
+			if method == "eth_getTransactionByBlockNumberAndIndex" && params.get(1) == Some(&json!(OUT_OF_BOUNDS)) {
+				return Err(ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, "9 is out of bounds", None::<()>));
+			}
+			Ok(answer("frontier", method, params.to_vec()))
+		}
+	}
+
+	/// An eth-rpc that knows every hash but [`OLD_HASH`]. Its subscriptions send
+	/// two heads and stay open until the subscriber leaves.
+	async fn eth_rpc(max_connections: u32) -> (String, ServerHandle) {
+		serve("127.0.0.1:0", max_connections).await
+	}
+
+	async fn serve(addr: &str, max_connections: u32) -> (String, ServerHandle) {
 		let mut module = RpcModule::new(());
 		for &(method, route) in METHODS {
 			module
 				.register_method(method, move |params, _, _| {
 					let params: Vec<Value> = params.parse().unwrap_or_default();
-					if method == "eth_getLogs" {
-						let filter = &params[0];
-						let from = number(filter.get("fromBlock"));
-						let to = number(filter.get("toBlock")).min(20);
-						return Ok::<_, ErrorObjectOwned>(json!((from..=to)
-							.map(|block| json!({ "blockNumber": quantity(block), "from": name }))
-							.collect::<Vec<_>>()));
-					}
-					if name == "eth-rpc" && serde_json::to_string(&params).unwrap().contains(OLD_HASH) {
+					if serde_json::to_string(&params).unwrap().contains(OLD_HASH) {
 						return match route {
 							Route::Hash => Ok(Value::Null),
 							_ => Err(ErrorObjectOwned::owned(-32000, "block not found", None::<()>)),
@@ -521,7 +503,7 @@ mod tests {
 					if method == "eth_chainId" {
 						return Err(ErrorObjectOwned::owned(-32001, "rate limited", Some("try later")));
 					}
-					Ok(json!({ "from": name, "params": params }))
+					Ok(answer("eth-rpc", method, params))
 				})
 				.unwrap();
 		}
@@ -533,7 +515,7 @@ mod tests {
 				move |_, pending, _, _| async move {
 					let sink = pending.accept().await?;
 					for head in 1..=2 {
-						sink.send(SubscriptionMessage::from_json(&json!({ "number": head, "from": name }))?)
+						sink.send(SubscriptionMessage::from_json(&json!({ "number": head, "from": "eth-rpc" }))?)
 							.await?;
 					}
 					sink.closed().await;
@@ -548,20 +530,24 @@ mod tests {
 
 	struct Setup {
 		module: RpcModule<()>,
-		_servers: Vec<ServerHandle>,
+		_eth_rpc: ServerHandle,
 	}
 
-	async fn setup(chain: impl Chain + 'static, with_frozen: bool) -> Setup {
-		let (eth_rpc, eth_rpc_server) = upstream("eth-rpc", 100).await;
-		let (frozen, frozen_server) = upstream("frozen", 100).await;
-		let forward =
-			EthForward::new(chain, &eth_rpc, with_frozen.then_some(frozen.as_str()), RESPONSE_LIMIT).unwrap();
-		Setup { module: forward.into_rpc().unwrap(), _servers: vec![eth_rpc_server, frozen_server] }
+	async fn setup(chain: impl Chain + 'static, with_history: bool) -> Setup {
+		let (url, eth_rpc) = eth_rpc(100).await;
+		let history = with_history.then(|| Arc::new(FakeHistory) as Arc<dyn History>);
+		let forward = EthForward::new(chain, &url, history, RESPONSE_LIMIT).unwrap();
+		Setup { module: forward.into_rpc().unwrap(), _eth_rpc: eth_rpc }
 	}
 
 	/// The chain switched to pallet-revive at block 10.
 	fn switched() -> FakeChain {
 		FakeChain { best: 15, switch: 10 }
+	}
+
+	/// The chain is at block 15 and Frontier still builds it.
+	fn not_switched() -> FakeChain {
+		FakeChain { best: 15, switch: 100 }
 	}
 
 	/// Awaits `future`, failing the test after 30 seconds instead of hanging.
@@ -575,17 +561,17 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn blocks_before_the_switch_go_to_the_frozen_node() {
+	async fn blocks_before_the_switch_are_answered_by_the_node() {
 		let setup = setup(switched(), true).await;
 		let address = "0x00000000000000000000000000000000000000aa";
 
-		assert_eq!(answered_by(&setup, "eth_getBalance", json!([address, "0x9"])).await, "frozen");
-		assert_eq!(answered_by(&setup, "eth_getBalance", json!([address, "earliest"])).await, "frozen");
+		assert_eq!(answered_by(&setup, "eth_getBalance", json!([address, "0x9"])).await, "frontier");
+		assert_eq!(answered_by(&setup, "eth_getBalance", json!([address, "earliest"])).await, "frontier");
 		assert_eq!(
 			answered_by(&setup, "eth_getStorageAt", json!([address, "0x0", { "blockNumber": "0x3" }])).await,
-			"frozen",
+			"frontier",
 		);
-		assert_eq!(answered_by(&setup, "eth_getBlockByNumber", json!(["0x1", false])).await, "frozen");
+		assert_eq!(answered_by(&setup, "eth_getBlockByNumber", json!(["0x1", false])).await, "frontier");
 	}
 
 	#[tokio::test]
@@ -601,20 +587,20 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn a_hash_eth_rpc_does_not_know_goes_to_the_frozen_node() {
+	async fn a_hash_eth_rpc_does_not_know_is_looked_up_in_the_node() {
 		let setup = setup(switched(), true).await;
 		let new_hash = format!("0x{}", "22".repeat(32));
 
-		assert_eq!(answered_by(&setup, "eth_getTransactionReceipt", json!([OLD_HASH])).await, "frozen");
+		assert_eq!(answered_by(&setup, "eth_getTransactionReceipt", json!([OLD_HASH])).await, "frontier");
 		assert_eq!(answered_by(&setup, "eth_getTransactionReceipt", json!([new_hash])).await, "eth-rpc");
 		assert_eq!(
 			answered_by(&setup, "eth_getBalance", json!(["0x00", { "blockHash": OLD_HASH }])).await,
-			"frozen",
+			"frontier",
 		);
 	}
 
-	/// The frozen node's logs end right before the switch and eth-rpc's start
-	/// at it, so the merged answer runs through in block order.
+	/// The Frontier logs end right before the switch and eth-rpc's start at it,
+	/// so the merged answer runs through in block order.
 	#[tokio::test]
 	async fn logs_across_the_switch_come_back_in_block_order() {
 		let setup = setup(switched(), true).await;
@@ -631,7 +617,7 @@ mod tests {
 			.collect();
 		assert_eq!(
 			blocks,
-			[("0x8", "frozen"), ("0x9", "frozen"), ("0xa", "eth-rpc"), ("0xb", "eth-rpc")],
+			[("0x8", "frontier"), ("0x9", "frontier"), ("0xa", "eth-rpc"), ("0xb", "eth-rpc")],
 		);
 	}
 
@@ -641,21 +627,21 @@ mod tests {
 
 		let early: Vec<Value> = setup
 			.module
-			.call("eth_getLogs", array(&[json!({ "fromBlock": "0x1", "toBlock": "0x2" })]))
+			.call("eth_getLogs", array(&[json!({ "fromBlock": "0x1", "toBlock": "0x9" })]))
 			.await
 			.unwrap();
 		let late: Vec<Value> = setup
 			.module
-			.call("eth_getLogs", array(&[json!({ "fromBlock": "0xc", "toBlock": "latest" })]))
+			.call("eth_getLogs", array(&[json!({ "fromBlock": "0xa", "toBlock": "latest" })]))
 			.await
 			.unwrap();
 
-		assert!(early.iter().all(|log| log["from"] == "frozen"));
+		assert!(early.iter().all(|log| log["from"] == "frontier"));
 		assert!(late.iter().all(|log| log["from"] == "eth-rpc"));
 	}
 
 	#[tokio::test]
-	async fn without_a_frozen_node_eth_rpc_answers_everything() {
+	async fn without_the_frontier_history_eth_rpc_answers_everything() {
 		let setup = setup(switched(), false).await;
 
 		assert_eq!(answered_by(&setup, "eth_getBlockByNumber", json!(["0x1", false])).await, "eth-rpc");
@@ -664,12 +650,28 @@ mod tests {
 		assert_eq!(receipt, Value::Null);
 	}
 
+	/// eth-rpc knows the hash, but with no block of its own yet it is not asked.
 	#[tokio::test]
-	async fn before_the_switch_the_frozen_node_answers_everything() {
-		let setup = setup(FakeChain { best: 15, switch: 100 }, true).await;
+	async fn before_the_switch_blocks_hashes_and_logs_stay_in_the_node() {
+		let setup = setup(not_switched(), true).await;
+		let new_hash = format!("0x{}", "22".repeat(32));
 
-		assert_eq!(answered_by(&setup, "eth_getBalance", json!(["0x00", "latest"])).await, "frozen");
-		assert_eq!(answered_by(&setup, "eth_sendRawTransaction", json!(["0x02"])).await, "frozen");
+		assert_eq!(answered_by(&setup, "eth_getBalance", json!(["0x00", "0xf"])).await, "frontier");
+		assert_eq!(answered_by(&setup, "eth_getTransactionReceipt", json!([new_hash])).await, "frontier");
+		let logs: Vec<Value> = setup
+			.module
+			.call("eth_getLogs", array(&[json!({ "fromBlock": "0x1", "toBlock": "latest" })]))
+			.await
+			.unwrap();
+		assert!(logs.iter().all(|log| log["from"] == "frontier"));
+	}
+
+	#[tokio::test]
+	async fn before_the_switch_the_head_still_goes_to_eth_rpc() {
+		let setup = setup(not_switched(), true).await;
+
+		assert_eq!(answered_by(&setup, "eth_getBalance", json!(["0x00", "latest"])).await, "eth-rpc");
+		assert_eq!(answered_by(&setup, "eth_sendRawTransaction", json!(["0x02"])).await, "eth-rpc");
 	}
 
 	#[tokio::test]
@@ -681,6 +683,18 @@ mod tests {
 		let MethodsError::JsonRpc(error) = error else { panic!("a call error, got {error:?}") };
 		assert_eq!((error.code(), error.message()), (-32001, "rate limited"));
 		assert_eq!(error.data().map(|data| data.get()), Some("\"try later\""));
+	}
+
+	#[tokio::test]
+	async fn history_errors_reach_the_caller_as_they_are() {
+		let setup = setup(switched(), true).await;
+		let params = array(&[json!("0x1"), json!(OUT_OF_BOUNDS)]);
+
+		let error =
+			setup.module.call::<_, Value>("eth_getTransactionByBlockNumberAndIndex", params).await.unwrap_err();
+
+		let MethodsError::JsonRpc(error) = error else { panic!("a call error, got {error:?}") };
+		assert_eq!((error.code(), error.message()), (INTERNAL_ERROR_CODE, "9 is out of bounds"));
 	}
 
 	#[tokio::test]
@@ -705,8 +719,8 @@ mod tests {
 	/// both get served, so they ride the same one.
 	#[tokio::test]
 	async fn subscriptions_share_one_connection_to_the_upstream() {
-		let (eth_rpc, _server) = upstream("eth-rpc", 1).await;
-		let module = EthForward::new(switched(), &eth_rpc, None, RESPONSE_LIMIT).unwrap().into_rpc().unwrap();
+		let (url, _server) = eth_rpc(1).await;
+		let module = EthForward::new(switched(), &url, None, RESPONSE_LIMIT).unwrap().into_rpc().unwrap();
 
 		let mut first = module.subscribe_unbounded("eth_subscribe", array(&[json!("newHeads")])).await.unwrap();
 		let mut second = module.subscribe_unbounded("eth_subscribe", array(&[json!("newHeads")])).await.unwrap();
@@ -721,8 +735,8 @@ mod tests {
 	/// same address. The open subscription carries on over a fresh connection.
 	#[tokio::test]
 	async fn a_subscription_outlives_an_upstream_restart() {
-		let (eth_rpc, server) = upstream("eth-rpc", 1).await;
-		let module = EthForward::new(switched(), &eth_rpc, None, RESPONSE_LIMIT).unwrap().into_rpc().unwrap();
+		let (url, server) = eth_rpc(1).await;
+		let module = EthForward::new(switched(), &url, None, RESPONSE_LIMIT).unwrap().into_rpc().unwrap();
 		let mut heads = module.subscribe_unbounded("eth_subscribe", array(&[json!("newHeads")])).await.unwrap();
 		for _ in 0..2 {
 			heads.next::<Value>().await.unwrap().unwrap();
@@ -731,30 +745,7 @@ mod tests {
 		server.stop().unwrap();
 		server.stopped().await;
 		sleep(RETRY_FIRST * 2).await;
-		let _server = serve("eth-rpc", eth_rpc.strip_prefix("http://").unwrap(), 1).await;
-
-		let (head, _) = soon(heads.next::<Value>()).await.unwrap().unwrap();
-		assert_eq!(head, json!({ "number": 1, "from": "eth-rpc" }));
-	}
-
-	/// The head moves from the last Frontier block onto the switch while the
-	/// subscription sits on the frozen node.
-	#[tokio::test]
-	async fn a_subscription_opened_before_the_switch_moves_to_eth_rpc() {
-		let switch = 10;
-		let best = Arc::new(AtomicU64::new(switch - 1));
-		let setup = setup(MovingChain { best: best.clone(), switch }, true).await;
-		let mut heads = setup
-			.module
-			.subscribe_unbounded("eth_subscribe", array(&[json!("newHeads")]))
-			.await
-			.unwrap();
-		for number in 1..=2 {
-			let (head, _) = heads.next::<Value>().await.unwrap().unwrap();
-			assert_eq!(head, json!({ "number": number, "from": "frozen" }));
-		}
-
-		best.store(switch, Ordering::Relaxed);
+		let _server = serve(url.strip_prefix("http://").unwrap(), 1).await;
 
 		let (head, _) = soon(heads.next::<Value>()).await.unwrap().unwrap();
 		assert_eq!(head, json!({ "number": 1, "from": "eth-rpc" }));

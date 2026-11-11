@@ -18,6 +18,7 @@ members = [
     "pallets/reward",
     "pallets/validator",
     "runtime",
+    "vendor/fc-rpc-core",
 ]
 resolver = "2"
 
@@ -52,6 +53,12 @@ rand_pcg = { version = "=0.10.2", default-features = false }
 rand_core = { version = "=0.10.1", default-features = false }
 spectral3d = { git = "https://github.com/numen-network/spectral3d.git", rev = "af77fd9" }
 hex-literal = "1.1.0"
+ethereum = { version = "0.18.2", features = ["with-scale", "with-serde"] }
+ethereum-types = { version = "0.15.1" }
+evm-core = { version = "0.43.0", features = ["with-codec"] }
+fc-rpc-core = { path = "./vendor/fc-rpc-core" }
+rlp = { version = "0.6.1" }
+rustc-hex = { version = "2.1.0" }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 frame-benchmarking-cli = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
 frame-metadata-hash-extension = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
@@ -125,6 +132,8 @@ sp-storage = { git = "https://github.com/paritytech/polkadot-sdk", branch = "sta
 sp-transaction-pool = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
 sp-version = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
 sp-crypto-hashing = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
+sp-state-machine = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
+sp-trie = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
 substrate-wasm-builder = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
 cumulus-primitives-proof-size-hostfunction = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2609", default-features = false }
 

@@ -1461,7 +1461,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -3028,7 +3028,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -3604,7 +3604,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3620,6 +3620,25 @@ dependencies = [
  "impl-serde",
  "scale-info",
  "tiny-keccak",
+]
+
+[[package]]
+name = "ethereum"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ee371ebb7479ed3258617557ab0b3247e741075cb6b02b820d188f68da44441"
+dependencies = [
+ "bytes",
+ "ethereum-types",
+ "hash-db",
+ "hash256-std-hasher",
+ "k256",
+ "parity-scale-codec",
+ "rlp 0.6.1",
+ "scale-info",
+ "serde",
+ "sha3 0.10.8",
+ "trie-root",
 ]
 
 [[package]]
@@ -3671,6 +3690,18 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener 5.4.0",
  "pin-project-lite",
+]
+
+[[package]]
+name = "evm-core"
+version = "0.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22ef956f8cc0c25a2d8be1dea7d659782b7c5f201f7e8057878f2051eec78350"
+dependencies = [
+ "parity-scale-codec",
+ "primitive-types 0.13.1",
+ "scale-info",
+ "serde",
 ]
 
 [[package]]
@@ -3765,6 +3796,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "fc-rpc-core"
+version = "1.1.0-dev"
+dependencies = [
+ "ethereum",
+ "ethereum-types",
+ "jsonrpsee",
+ "rlp 0.6.1",
+ "rustc-hex",
+ "serde",
+ "serde_json",
+ "sp-core",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk?branch=stable2609)",
 ]
 
 [[package]]
@@ -5505,7 +5551,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.1",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7359,6 +7405,10 @@ version = "1.1.0"
 dependencies = [
  "clap",
  "cumulus-primitives-proof-size-hostfunction",
+ "ethereum",
+ "ethereum-types",
+ "evm-core",
+ "fc-rpc-core",
  "frame-benchmarking-cli",
  "frame-metadata-hash-extension",
  "frame-system",
@@ -7372,6 +7422,7 @@ dependencies = [
  "parity-scale-codec",
  "poscan",
  "poscan-pow",
+ "rlp 0.6.1",
  "sc-basic-authorship",
  "sc-cli",
  "sc-client-api",
@@ -7395,12 +7446,16 @@ dependencies = [
  "sp-consensus-grandpa",
  "sp-consensus-pow",
  "sp-core",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk?branch=stable2609)",
+ "sp-externalities",
  "sp-genesis-builder",
  "sp-inherents",
  "sp-io",
  "sp-keyring",
  "sp-runtime",
+ "sp-state-machine",
  "sp-timestamp",
+ "sp-trie",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
  "tokio",
@@ -9478,7 +9533,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -9498,7 +9553,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -9687,7 +9742,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9700,7 +9755,7 @@ dependencies = [
  "libc",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10283,7 +10338,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa24e92bb2a83198bb76d661a71df9f7076b8c420b8696e4d3d97d50d94479e3"
 dependencies = [
  "bytes",
+ "rlp-derive",
  "rustc-hex",
+]
+
+[[package]]
+name = "rlp-derive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "652db34deaaa57929e10ca18e5454a32cb0efc351ae80d320334bbf907b908b3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -10448,7 +10515,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10461,7 +10528,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10519,7 +10586,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -14147,7 +14214,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.7",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -14166,7 +14233,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.0.7",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -15595,7 +15662,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
