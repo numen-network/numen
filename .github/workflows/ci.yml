@@ -4,13 +4,22 @@ on:
   pull_request:
     branches:
       - master
+  # Saves the caches that PRs restore. PRs can't read each other's.
+  push:
+    branches:
+      - master
+  # GitHub evicts caches unread for 7 days.
+  schedule:
+    - cron: '23 3 * * 1,4'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A cancelled run saves no cache.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
@@ -33,14 +42,23 @@ jobs:
 
   clippy:
     needs: changes
-    # Skipped jobs count as passing required checks. Run these even when the changes job fails.
+    # Skipped jobs count as passing required checks. Run these even when the changes job fails or is skipped.
     if: &code ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - uses: ./.github/actions/free-disk-space
-      - uses: ./.github/actions/ubuntu-dependencies
+      - &rust-cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - &protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc
+      # bindgen links libclang. Only the dev package has the unversioned .so.
+      - &libclang
+        name: Install libclang-dev
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev
       - name: Run clippy
         run: SKIP_WASM_BUILD=1 cargo clippy --all-targets --locked --workspace --quiet -- -D warnings
         timeout-minutes: 30
@@ -54,9 +72,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - uses: ./.github/actions/free-disk-space
-      - uses: ./.github/actions/ubuntu-dependencies
+      - *rust-cache
+      - *protoc
+      - *libclang
       - name: Run tests
         run: SKIP_WASM_BUILD=1 cargo test --workspace --locked
         timeout-minutes: 30
@@ -83,9 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - uses: ./.github/actions/free-disk-space
-      - uses: ./.github/actions/ubuntu-dependencies
+      - *rust-cache
+      - *protoc
       - name: Build runtime wasm (no_std)
         run: cargo check -p numen-runtime --locked --features metadata-hash
         timeout-minutes: 45
@@ -98,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     steps: &determinism
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - *rust-cache
       - uses: taiki-e/install-action@v2
         with:
           tool: wasmtime

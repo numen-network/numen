@@ -10,7 +10,6 @@ jobs:
       scenarios: ${{ steps.list.outputs.scenarios }}
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/free-disk-space
       - uses: ./.github/actions/ubuntu-dependencies
       - name: Build node and eth-rpc
