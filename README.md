@@ -144,3 +144,51 @@ eth-rpc knows only the blocks pallet-revive built. An archive node answers for t
 ```bash
 ./numen --chain mainnet-raw.json --state-pruning archive --eth-rpc http://127.0.0.1:8545
 ```
+
+Run it as a service
+
+```ini
+[Unit]
+Description=Numen eth-rpc
+After=network-online.target numen.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/opt/numen/eth-rpc \
+    --node-rpc-url ws://127.0.0.1:9944 \
+    --rpc-port 8545 \
+    --eth-pruning archive \
+    --rpc-max-connections 500 \
+    --rpc-max-subscriptions-per-connection 65536
+
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini
+[Unit]
+Description=Numen node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/opt/numen/numen \
+    --chain /opt/numen/mainnet-raw.json \
+    --state-pruning archive \
+    --eth-rpc http://127.0.0.1:8545 \
+    --in-peers 100 \
+    --out-peers 25 \
+    --in-peers-light 50
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
