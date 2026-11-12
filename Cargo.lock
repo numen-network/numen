@@ -8107,7 +8107,6 @@ dependencies = [
 [[package]]
 name = "pallet-revive"
 version = "0.20.2"
-source = "git+https://github.com/paritytech/polkadot-sdk?branch=stable2609#327c68019c0e82495d226d0f793741f00f3863d9"
 dependencies = [
  "alloy-consensus",
  "alloy-core",

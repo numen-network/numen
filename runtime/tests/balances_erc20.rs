@@ -9,18 +9,26 @@ mod common;
 use codec::Encode;
 use common::preset_ext;
 use frame_support::{
-	storage::unhashed,
-	traits::fungible::{Inspect, Mutate},
+	storage::{unhashed, with_transaction},
+	traits::{
+		fungible::{Inspect, Mutate},
+		Get,
+	},
 	weights::Weight,
 	Blake2_128Concat, StorageHasher,
 };
 use numen_runtime::{
 	balances_erc20::{proxy_code, Allowances, IBalancesErc20, Nonces, ADDRESS, PRECOMPILE},
-	genesis_config_presets as presets, AccountId, Balances, Revive, Runtime, RuntimeEvent,
-	RuntimeOrigin, System, Timestamp, UNIT,
+	configs::evm::EvmChainId,
+	genesis_config_presets as presets, AccountId, Balance, Balances, Block, BlockNumber, Executive,
+	Nonce, Revive, Runtime, RuntimeCall, RuntimeEvent, RuntimeOrigin, System, Timestamp,
+	UncheckedExtrinsic, UNIT,
 };
 use pallet_revive::{
-	evm::Account,
+	evm::{Account, GenericTransaction},
+	pallet_revive_types::runtime_api::{
+		TransactInputPayloadV1, TransactOutputPayloadV1, TransactVersionedInputPayload,
+	},
 	precompiles::alloy::{
 		primitives::{Address, B256, U256 as EvmU256},
 		sol_types::{Revert, SolCall, SolError, SolEvent},
@@ -28,9 +36,11 @@ use pallet_revive::{
 	AccountId32Mapper, AddressMapper, Code, ExecConfig, ExecReturnValue, TransactionLimits, H160,
 	H256, U256,
 };
+use pallet_revive::runtime_decl_for_revive_api::ReviveApi;
 use sp_core::Pair;
 use sp_io::TestExternalities;
 use sp_keyring::Sr25519Keyring;
+use sp_runtime::{generic, DispatchError, TransactionOutcome};
 
 /// Secret key of the permit signer, any valid secp256k1 scalar.
 const OWNER_KEY: [u8; 32] = [0x42; 32];
@@ -190,6 +200,108 @@ fn total_supply_is_the_total_issuance() {
 			IBalancesErc20::totalSupplyCall::abi_decode_returns(&data).unwrap(),
 			EvmU256::from(Balances::total_issuance()),
 		);
+	});
+}
+
+/// `totalSupply()` through the runtime API behind `eth_call`, with `gas` as
+/// the caller gives it.
+fn total_supply_in_a_dry_run(gas: Option<U256>) -> EvmU256 {
+	let tx = GenericTransaction {
+		from: Some(Account::default().address()),
+		to: Some(ADDRESS),
+		input: IBalancesErc20::totalSupplyCall {}.abi_encode().into(),
+		gas,
+		..Default::default()
+	};
+	let input = TransactVersionedInputPayload::V1(TransactInputPayloadV1 {
+		tx: tx.into(),
+		timestamp_override: None,
+		perform_balance_checks: true,
+		state_overrides: None,
+	});
+	let output = <Runtime as ReviveApi<Block, AccountId, Balance, Nonce, BlockNumber, u64>>::eth_transact_versioned(input)
+		.expect("the dry run succeeds");
+	let data = TransactOutputPayloadV1::try_from(output).expect("a v1 output").transact_info.data;
+	IBalancesErc20::totalSupplyCall::abi_decode_returns(&data).expect("a supply")
+}
+
+#[test]
+fn total_supply_in_a_dry_run_is_the_total_issuance() {
+	for gas in [None, Some(U256::from(21_000)), Some(U256::from(1_000_000))] {
+		dev_ext().execute_with(|| {
+			let issuance = EvmU256::from(Balances::total_issuance());
+
+			assert_eq!(total_supply_in_a_dry_run(gas), issuance, "gas {gas:?}");
+		});
+	}
+}
+
+/// A contract that stores what `totalSupply()` returns in slot zero.
+fn deploy_supply_recorder() -> H160 {
+	let mut runtime = vec![0x63];
+	runtime.extend(IBalancesErc20::totalSupplyCall::SELECTOR);
+	runtime.extend([0x60, 0xe0, 0x1b, 0x60, 0, 0x52, 0x60, 0x20, 0x60, 0, 0x60, 4, 0x60, 0, 0x73]);
+	runtime.extend(ADDRESS.as_bytes());
+	runtime.extend([0x5a, STATICCALL, 0x50, 0x60, 0, 0x51, 0x60, 0, 0x55, 0x00]);
+	let len = runtime.len() as u8;
+	let mut init = vec![0x60, len, 0x60, 12, 0x60, 0, 0x39, 0x60, len, 0x60, 0, 0xf3];
+	init.extend(runtime);
+
+	Revive::bare_instantiate(
+		RuntimeOrigin::signed(alice()),
+		U256::zero(),
+		limits(),
+		Code::Upload(init.clone()),
+		Vec::new(),
+		Some(keccak(&init)),
+		&ExecConfig::new_substrate_tx(),
+	)
+	.result
+	.expect("the recorder deploys")
+	.addr
+}
+
+/// A call to `to` signed by `from`, wrapped the way an RPC node submits it.
+fn eth_transact(from: &Account, to: H160) -> UncheckedExtrinsic {
+	let mut tx = GenericTransaction {
+		from: Some(from.address()),
+		to: Some(to),
+		chain_id: Some(U256::from(EvmChainId::get())),
+		nonce: Some(System::account_nonce(from.substrate_account()).into()),
+		gas_price: Some(Revive::evm_base_fee()),
+		..Default::default()
+	};
+	let estimate = with_transaction(|| {
+		TransactionOutcome::Rollback(Ok::<_, DispatchError>(Revive::dry_run_eth_transact(
+			tx.clone(),
+			None,
+			true,
+			None,
+		)))
+	})
+	.expect("the dry run rolls back")
+	.expect("the dry run succeeds");
+	tx.gas = Some(estimate.eth_gas);
+	let signed = from.sign_transaction(tx.try_into_unsigned().expect("a complete transaction"));
+	let call =
+		RuntimeCall::Revive(pallet_revive::Call::eth_transact { payload: signed.signed_payload() });
+	generic::UncheckedExtrinsic::new_bare(call).into()
+}
+
+#[test]
+fn total_supply_in_a_transaction_is_the_total_issuance() {
+	dev_ext().execute_with(|| {
+		let recorder = deploy_supply_recorder();
+		let issuance = Balances::total_issuance();
+
+		Executive::apply_extrinsic(eth_transact(&Account::default(), recorder))
+			.expect("the block accepts the call")
+			.expect("the call dispatches");
+
+		let recorded = Revive::get_storage(recorder, [0; 32])
+			.expect("the recorder is a contract")
+			.expect("the recorder stored the supply");
+		assert_eq!(U256::from_big_endian(&recorded), U256::from(issuance));
 	});
 }
 

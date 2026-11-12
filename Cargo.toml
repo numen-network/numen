@@ -20,6 +20,7 @@ members = [
     "runtime",
     "vendor/fc-rpc-core",
 ]
+exclude = ["vendor/pallet-revive"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -146,3 +147,5 @@ codegen-units = 1
 inherits = "release"
 lto = true
 
+[patch."https://github.com/paritytech/polkadot-sdk"]
+pallet-revive = { path = "vendor/pallet-revive" }
