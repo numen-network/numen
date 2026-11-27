@@ -60,7 +60,7 @@ pub struct EthDeps {
 }
 
 /// Full client dependencies.
-pub struct FullDeps<C, P, B> {
+pub struct FullDeps<C, P: ?Sized, B> {
 	/// The client instance to use.
 	pub client: Arc<C>,
 	/// Transaction pool instance.
@@ -89,7 +89,7 @@ where
 	C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>,
 	C::Api: BlockBuilder<Block>,
 	C::Api: poscan_pow::PowVerifyApi<Block>,
-	P: TransactionPool<Block = Block, Hash = <Block as BlockT>::Hash> + 'static,
+	P: TransactionPool<Block = Block, Hash = <Block as BlockT>::Hash> + ?Sized + 'static,
 	B: sc_client_api::Backend<Block> + Send + Sync + 'static,
 {
 	use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};

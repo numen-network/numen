@@ -102,21 +102,23 @@ impl Node for ClientNode {
 		metered: bool,
 	) -> Result<Vec<u8>, ApiError> {
 		let state = self.client.state_at(at)?;
-		let code_state = self.client.state_at(self.built_by(at)?)?;
-		let code = BackendRuntimeCode::new(&code_state, CallContext::Offchain.into());
+		let built_by = self.built_by(at)?;
+		let code_state = self.client.state_at(built_by)?;
+		let context = CallContext::Offchain;
+		let state_version = self.client.runtime_version_at(built_by, context)?.state_version();
+		let code = BackendRuntimeCode::new(&code_state, context.into());
 		let code = code.runtime_code().map_err(sp_blockchain::Error::RuntimeCode)?;
 		let changes = &mut *changes.borrow_mut();
 		let mut extensions = Extensions::new();
-		let context = CallContext::Offchain;
 		let result = if metered {
 			let recorder = Recorder::default();
 			extensions.register(ProofSizeExt::new(recorder.clone()));
 			let backend = TrieBackendBuilder::wrap(state.as_trie_backend()).with_recorder(recorder).build();
-			StateMachine::new(&backend, changes, &self.executor, function, &arguments, &mut extensions, &code, context)
+			StateMachine::new(&backend, changes, &self.executor, function, &arguments, &mut extensions, &code, context, state_version)
 				.set_parent_hash(at)
 				.execute()
 		} else {
-			StateMachine::new(&state, changes, &self.executor, function, &arguments, &mut extensions, &code, context)
+			StateMachine::new(&state, changes, &self.executor, function, &arguments, &mut extensions, &code, context, state_version)
 				.set_parent_hash(at)
 				.execute()
 		};

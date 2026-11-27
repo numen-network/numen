@@ -17,9 +17,9 @@
 
 use crate::{
 	AccountInfo, AccountInfoOf, BalanceOf, BalanceWithDust, Code, CodeInfo, CodeInfoOf,
-	CodeRemoved, Config, ContractInfo, Error, Event, ImmutableData, ImmutableDataOf, LOG_TARGET,
-	Pallet as Contracts, RuntimeCosts,
-	access_list::{AccessEntry, AccessList, StorageAccessKind, StorageOp},
+	CodeRemoved, Config, ContractInfo, ContractLogTopics, Error, Event, ImmutableData,
+	ImmutableDataOf, LOG_TARGET, Pallet as Contracts, RuntimeCosts,
+	access_list::{AccessEntry, AccessList, StorageOp, Warmth},
 	address::{self, AddressMapper},
 	deposit_payment::Deposit as _,
 	evm::{block_storage, fees::InfoT as _, transfer_with_dust},
@@ -33,7 +33,7 @@ use crate::{
 	transient_storage::TransientStorage,
 };
 use alloc::{
-	collections::{BTreeMap, BTreeSet, btree_map},
+	collections::{BTreeMap, BTreeSet},
 	vec::Vec,
 };
 use core::{cmp, fmt::Debug, marker::PhantomData, mem, ops::ControlFlow};
@@ -220,7 +220,8 @@ impl<T: Config> Origin<T> {
 /// call.
 #[derive(DebugNoBound)]
 pub enum CallResources<T: Config> {
-	/// Resources are not limited
+	/// The caller sets no limit, so the callee gets as much of the caller's remaining resources as
+	/// the EIP-150 63/64 rule allows.
 	NoLimits,
 	/// Resources encoded using their actual values.
 	WeightDeposit { weight: Weight, deposit_limit: BalanceOf<T> },
@@ -249,16 +250,6 @@ impl<T: Config> Default for CallResources<T> {
 	}
 }
 
-/// Stored inside the `Stack` for each contract that is scheduled for termination.
-struct TerminateArgs<T: Config> {
-	/// Where to send the free balance of the terminated contract.
-	beneficiary: T::AccountId,
-	/// Triggered by the EVM opcode.
-	only_if_same_tx: bool,
-	/// The storage deposit already refunded when the termination was scheduled.
-	refunded: BalanceOf<T>,
-}
-
 /// Environment functions only available to host functions.
 pub trait Ext: PrecompileWithInfoExt {
 	/// Execute code in the current frame.
@@ -283,10 +274,9 @@ pub trait Ext: PrecompileWithInfoExt {
 	#[allow(dead_code)]
 	fn own_code_hash(&mut self) -> &H256;
 
-	/// Get the length of the immutable data.
-	///
 	/// This query is free as it does not need to load the immutable data from storage.
 	/// Useful when we need a constant time lookup of the length.
+	/// For foreign code (delegate call, EIP-7702 delegated EOA) returns the `IMMUTABLE_BYTES` cap.
 	fn immutable_data_len(&mut self) -> u32;
 
 	/// Returns the immutable data of the current contract.
@@ -437,8 +427,19 @@ pub trait PrecompileExt: sealing::Sealed {
 
 	/// Deposit an event with the given topics.
 	///
-	/// There should not be any duplicates in `topics`.
-	fn deposit_event(&mut self, topics: Vec<H256>, data: Vec<u8>);
+	/// There should not be any duplicates in `topics`. [`ContractLogTopics`] bounds `topics` to
+	/// [`limits::NUM_EVENT_TOPICS`], so no event with more topics reaches the event sink.
+	///
+	/// Fails with [`Error::ReceiptTooLarge`] when the log would take the open ethereum
+	/// transaction's receipt past [`limits::MAX_RECEIPT_LOGS_BYTES`]. Nothing is deposited then.
+	/// The frame fails with the same error when it returns, also if the error is ignored here,
+	/// unless a storage layer opened inside the frame around this call is rolled back: the
+	/// overflow then rolls back with that layer's changes.
+	fn deposit_event(
+		&mut self,
+		topics: ContractLogTopics,
+		data: Vec<u8>,
+	) -> Result<(), DispatchError>;
 
 	/// Returns the current block number.
 	fn block_number(&self) -> U256;
@@ -517,7 +518,7 @@ pub trait PrecompileExt: sealing::Sealed {
 	/// This is supposed to be used by the terminate precompile.
 	///
 	/// Transfer all funds to `beneficiary`.
-	/// Contract is deleted at the end of the call stack.
+	/// Contract is deleted only if it was created in the same call stack.
 	///
 	/// This function will fail if called from constructor.
 	fn terminate_caller(&mut self, beneficiary: &H160) -> Result<(), DispatchError>;
@@ -549,22 +550,15 @@ pub trait PrecompileExt: sealing::Sealed {
 		take_old: bool,
 	) -> Result<WriteOutcome, DispatchError>;
 
-	/// Checks if `key` was already accessed in this transaction and inserts it
-	/// otherwise, so subsequent accesses to the same slot bill as hot. Returns
-	/// the slot's [`StorageAccessKind`]. `op` is the operation being performed:
-	/// a write upgrades a slot that had only paid for a read. When
-	/// `transient` is true, skips the access list and returns the `Transient`
-	/// variant.
-	fn touch_storage_access(
-		&mut self,
-		transient: bool,
-		key: &Key,
-		op: StorageOp,
-	) -> StorageAccessKind;
+	/// Checks if the persistent storage slot `key` was already accessed in this transaction
+	/// and inserts it otherwise, so subsequent accesses to the same slot bill as hot. Returns
+	/// the slot's [`Warmth`]. `op` is the operation being performed: a write upgrades a slot
+	/// that had only paid for a read.
+	fn touch_storage_access(&mut self, key: &Key, op: StorageOp) -> Warmth;
 
-	/// Non-mutating sibling of `touch_storage_access`: prices the access without
-	/// warming the slot.
-	fn peek_storage_access(&self, transient: bool, key: &Key) -> StorageAccessKind;
+	/// Non-mutating sibling of `touch_storage_access`: reports the persistent storage
+	/// slot's warmth without warming it.
+	fn peek_storage_access(&self, key: &Key) -> Warmth;
 
 	/// Charges `diff` from the meter.
 	fn charge_storage(&mut self, diff: &Diff) -> DispatchResult;
@@ -690,12 +684,18 @@ struct Frame<T: Config> {
 	/// The delegate call info of the currently executing frame which was spawned by
 	/// `delegate_call`.
 	delegate: Option<DelegateInfo<T>>,
+	/// The address where the code (and immutable data) originates from.
+	///
+	/// For regular contracts, this equals the contract's own address.
+	/// For delegated accounts (EIP-7702), this is the delegation target's address.
+	/// For explicit delegate_call, this is the callee's address.
+	code_address: H160,
 	/// The output of the last executed call frame.
 	last_frame_output: ExecReturnValue,
 	/// The set of contracts that were created during this call stack.
 	contracts_created: BTreeSet<T::AccountId>,
 	/// The set of contracts that are registered for destruction at the end of this call stack.
-	contracts_to_be_destroyed: BTreeMap<T::AccountId, TerminateArgs<T>>,
+	contracts_to_be_destroyed: BTreeMap<T::AccountId, T::AccountId>,
 }
 
 /// This structure is used to represent the arguments in a delegate call frame in order to
@@ -780,28 +780,6 @@ impl<T: Config> Frame<T> {
 	/// Return the `contract_info` of the current contract.
 	fn contract_info(&mut self) -> &mut ContractInfo<T> {
 		self.contract_info.get(&self.account_id)
-	}
-
-	/// Schedule `account_id` for termination at the end of the call stack.
-	///
-	/// A contract can be scheduled more than once, for example by `System.terminate` followed by
-	/// `SELFDESTRUCT`. A later termination must never downgrade an earlier one: once any of them
-	/// is unconditional the contract is deleted, since `System.terminate` already refunded the
-	/// deposit when it was called. The refunds add up, so the transaction meter sees each one.
-	/// The `beneficiary` comes from the later termination, since it is the one the contract named
-	/// last.
-	fn schedule_termination(&mut self, account_id: T::AccountId, args: TerminateArgs<T>) {
-		match self.contracts_to_be_destroyed.entry(account_id) {
-			btree_map::Entry::Occupied(mut entry) => {
-				let old = entry.get();
-				let only_if_same_tx = old.only_if_same_tx && args.only_if_same_tx;
-				let refunded = old.refunded.saturating_add(args.refunded);
-				entry.insert(TerminateArgs { only_if_same_tx, refunded, ..args });
-			},
-			btree_map::Entry::Vacant(entry) => {
-				entry.insert(args);
-			},
-		}
 	}
 }
 
@@ -913,6 +891,7 @@ where
 					origin.account_id().map(T::AddressMapper::to_address).unwrap_or_default(),
 					T::AddressMapper::to_address(&dest),
 					None,
+					false,
 					false,
 					value,
 					&input_data,
@@ -1088,6 +1067,27 @@ where
 		Ok(Some((stack, executable)))
 	}
 
+	/// EIP-7702 chained delegation check for an account with no loadable code.
+	///
+	/// A chained delegation always surfaces with an empty snapshot: `set_delegation` only
+	/// snapshots a `code_hash` when the target is a deployed contract, and a contract can
+	/// never become delegated. So when `load_contract_with_delegation` returns no contract
+	/// info but a delegation target, one read of the target decides: if the target is itself
+	/// delegated, the spec resolves one hop, retrieves the target's indicator bytes
+	/// `0xef0100 || ..`, and traps on the leading `0xef` invalid opcode. Otherwise the
+	/// resolved code is genuinely empty and the call falls through to the transfer path.
+	fn fail_if_chained_delegation(target: Option<H160>) -> Result<(), ExecError> {
+		if let Some(target) = target &&
+			AccountInfo::<T>::is_delegated(&target)
+		{
+			return Err(ExecError {
+				error: <Error<T>>::ContractTrapped.into(),
+				origin: ErrorOrigin::Callee,
+			});
+		}
+		Ok(())
+	}
+
 	/// Construct a new frame.
 	///
 	/// This does not take `self` because when constructing the first frame `self` is
@@ -1102,6 +1102,14 @@ where
 		input_data: &[u8],
 		exec_config: &ExecConfig<T>,
 	) -> Result<Option<(Frame<T>, ExecutableOrPrecompile<T, E, Self>)>, ExecError> {
+		// `Some` once the account entry has been read: the delegation target it carried, so
+		// `code_address` below does not decode the same entry a second time.
+		let mut read_delegation: Option<Option<H160>> = None;
+		// `Some` when this is a delegate call whose callee is an EIP-7702 delegated EOA: the
+		// callee's delegation target, which is where the executed code (and therefore its
+		// immutable data) lives.
+		let mut delegate_code_target: Option<H160> = None;
+
 		let (account_id, contract_info, executable, delegate, entry_point) = match frame_args {
 			FrameArgs::Call { dest, cached_info, delegated_call } => {
 				let address = T::AddressMapper::to_address(&dest);
@@ -1112,22 +1120,33 @@ where
 				let mut contract = match (cached_info, &precompile) {
 					(Some(info), _) => CachedContract::Cached(info),
 					(None, None) => {
-						if let Some(info) = AccountInfo::<T>::load_contract(&address) {
+						let (info, target) =
+							AccountInfo::<T>::load_contract_with_delegation(&address);
+						read_delegation = Some(target);
+						if let Some(info) = info {
 							CachedContract::Cached(info)
 						} else {
+							Self::fail_if_chained_delegation(target)?;
 							return Ok(None);
 						}
 					},
 					(None, Some(precompile)) if precompile.has_contract_info() => {
 						log::trace!(target: LOG_TARGET, "found precompile for address {address:?}");
-						if let Some(info) = AccountInfo::<T>::load_contract(&address) {
+						let (info, target) =
+							AccountInfo::<T>::load_contract_with_delegation(&address);
+						read_delegation = Some(target);
+						if let Some(info) = info {
 							CachedContract::Cached(info)
 						} else {
-							let info = ContractInfo::new(&address, 0u32.into(), H256::zero())?;
-							CachedContract::Cached(info)
+							CachedContract::Cached(ContractInfo::new_for_precompile(&address))
 						}
 					},
-					(None, Some(_)) => CachedContract::None,
+					// A precompile address can never be delegated: skip the `code_address`
+					// delegation lookup below.
+					(None, Some(_)) => {
+						read_delegation = Some(None);
+						CachedContract::None
+					},
 				};
 
 				let delegated_call = delegated_call.or_else(|| {
@@ -1145,10 +1164,13 @@ where
 							_phantom: Default::default(),
 						}
 					} else {
-						let Some(info) = AccountInfo::<T>::load_contract(&delegated_call.callee)
-						else {
+						let (info, target) =
+							AccountInfo::<T>::load_contract_with_delegation(&delegated_call.callee);
+						let Some(info) = info else {
+							Self::fail_if_chained_delegation(target)?;
 							return Ok(None);
 						};
+						delegate_code_target = target;
 						let executable = E::from_storage(info.code_hash, meter)?;
 						ExecutableOrPrecompile::Executable(executable)
 					}
@@ -1190,11 +1212,7 @@ where
 						},
 					)
 				};
-				let contract = ContractInfo::new(
-					&address,
-					<System<T>>::account_nonce(&sender),
-					*executable.code_hash(),
-				)?;
+				let contract = ContractInfo::new(&address, account_nonce, *executable.code_hash())?;
 				(
 					T::AddressMapper::to_fallback_account_id(&address),
 					CachedContract::Cached(contract),
@@ -1204,6 +1222,23 @@ where
 				)
 			},
 		};
+
+		// Compute the code_address: the address where the code (and immutable data) comes from.
+		// For delegate_call this is the callee — or the callee's delegation target when the
+		// callee is itself a delegated EOA. For a call to an EIP-7702 delegated account it's
+		// the delegation target, otherwise it's the account's own address.
+		let address = T::AddressMapper::to_address(&account_id);
+		let code_address = delegate
+			.as_ref()
+			.map(|d| delegate_code_target.unwrap_or(d.callee))
+			.or_else(|| {
+				// Constructors can't be delegated, skip the storage read.
+				if entry_point == ExportedFunction::Constructor {
+					return None;
+				}
+				read_delegation.unwrap_or_else(|| AccountInfo::<T>::get_delegation_target(&address))
+			})
+			.unwrap_or(address);
 
 		// A constructor frame creates its contract in this transaction. Marking it here covers
 		// the first frame of `run_instantiate` as well as nested instantiations.
@@ -1218,6 +1253,7 @@ where
 			contract_info,
 			account_id,
 			entry_point,
+			code_address,
 			frame_meter: meter.new_nested(call_resources)?,
 			allows_reentry: true,
 			read_only,
@@ -1230,6 +1266,10 @@ where
 	}
 
 	/// Create a subsequent nested frame.
+	///
+	/// When the new frame runs PVM code, the interpreter cache of the innermost PVM frame that
+	/// waits on a sub-call is reset first (see `vm::pvm::reset_caller_cache`), so that only one
+	/// PVM frame of the call stack holds a cache. Pre-compiles and EVM frames reset nothing.
 	fn push_frame(
 		&mut self,
 		frame_args: FrameArgs<T, E>,
@@ -1285,6 +1325,12 @@ where
 				}) {
 				return Err(Error::<T>::DuplicateContract.into());
 			}
+			if executable.is_pvm() {
+				crate::vm::pvm::reset_caller_cache().map_err(|err| {
+					log::error!(target: LOG_TARGET, "failed to reset the interpreter cache: {err}");
+					Error::<T>::ExecutionFailed
+				})?;
+			}
 			self.frames.try_push(frame).map_err(|_| Error::<T>::MaxCallDepthReached)?;
 			Ok(Some(executable))
 		} else {
@@ -1322,7 +1368,8 @@ where
 			tracer.enter_child_span(
 				from,
 				to,
-				frame.delegate.as_ref().map(|delegate| delegate.callee),
+				(frame.code_address != to).then_some(frame.code_address),
+				frame.delegate.is_some(),
 				frame.read_only,
 				frame.value_transferred,
 				&input_data,
@@ -1516,7 +1563,12 @@ where
 					<CodeInfo<T>>::increment_refcount(code_hash)?;
 				}
 
-				let deposit = frame.contract_info().update_base_deposit(code_deposit);
+				// Root pays no storage deposit, so a base deposit recorded here would never be
+				// held. It stays zero, as storage refunds are bounded by the deposit held above it.
+				let deposit = match &self.origin {
+					Origin::Signed(_) => frame.contract_info().update_base_deposit(code_deposit),
+					Origin::Root => Zero::zero(),
+				};
 				frame.frame_meter.charge_contract_deposit_and_transfer(
 					frame.account_id.clone(),
 					StorageDeposit::Charge(deposit),
@@ -1533,6 +1585,12 @@ where
 			frame
 				.frame_meter
 				.finalize(contract)
+				.map_err(|e| ExecError { error: e, origin: ErrorOrigin::Callee })?;
+
+			// A log that did not fit the receipt fails the frame it was emitted in, also when the
+			// runtime mirrored it or a precompile did not propagate the error, unless the storage
+			// layer that recorded the overflow was rolled back inside the frame.
+			block_storage::ensure_receipt_within_limit::<T>()
 				.map_err(|e| ExecError { error: e, origin: ErrorOrigin::Callee })?;
 
 			Ok(output)
@@ -1700,9 +1758,7 @@ where
 
 			// only on success inherit the created and to be destroyed contracts
 			prev.contracts_created.extend(frame.contracts_created);
-			for (account, args) in frame.contracts_to_be_destroyed {
-				prev.schedule_termination(account, args);
-			}
+			prev.contracts_to_be_destroyed.extend(frame.contracts_to_be_destroyed);
 
 			if let Some(contract) = contract {
 				// Persist the info and invalidate the first stale cache we find.
@@ -1741,8 +1797,8 @@ where
 			// End of the callstack: destroy scheduled contracts in line with EVM semantics.
 			let contracts_created = mem::take(&mut self.first_frame.contracts_created);
 			let contracts_to_destroy = mem::take(&mut self.first_frame.contracts_to_be_destroyed);
-			for (contract_account, args) in contracts_to_destroy {
-				if args.only_if_same_tx && !contracts_created.contains(&contract_account) {
+			for (contract_account, beneficiary) in contracts_to_destroy {
+				if !contracts_created.contains(&contract_account) {
 					continue;
 				}
 				Self::do_terminate(
@@ -1750,7 +1806,7 @@ where
 					self.exec_config,
 					&contract_account,
 					&self.origin,
-					&args,
+					&beneficiary,
 				);
 			}
 		}
@@ -1847,15 +1903,14 @@ where
 		exec_config: &ExecConfig<T>,
 		contract_account: &T::AccountId,
 		origin: &Origin<T>,
-		args: &TerminateArgs<T>,
+		beneficiary: &T::AccountId,
 	) {
 		let contract_address = T::AddressMapper::to_address(contract_account);
 		// Every scheduled contract has its info stored by now: popping its frame wrote it.
 		let account_info = AccountInfoOf::<T>::get(contract_address).unwrap_or_default();
 
-		// `System.terminate` refunded the deposit when it was called, as far as the freeze on
-		// the account allowed. This refunds what is still held. A freeze can keep part of it on
-		// hold. That part stays on the account.
+		// Refund the storage deposit as far as the freeze on the account allows. A freeze can
+		// keep part of it on hold. That part stays on the account.
 		let refund = Self::best_effort(&contract_address, "refund the storage deposit", || {
 			Self::refund_on_terminate(exec_config, contract_account, origin)
 		})
@@ -1881,7 +1936,7 @@ where
 			Self::transfer(
 				&origin,
 				contract_account,
-				&args.beneficiary,
+				beneficiary,
 				balance,
 				Preservation::Preserve,
 				transaction_meter,
@@ -1911,7 +1966,7 @@ where
 			});
 		}
 
-		if let AccountType::Contract(info) = account_info.account_type {
+		if let Some(info) = account_info.account_type.contract_info() {
 			// this deletes the code if refcount drops to zero
 			Self::best_effort(&contract_address, "release the code", || {
 				CodeInfo::<T>::decrement_refcount(info.code_hash)
@@ -1928,7 +1983,7 @@ where
 		ImmutableDataOf::<T>::remove(contract_address);
 
 		// the meter needs to discard all deposits interacting with the terminated contract
-		transaction_meter.terminate(contract_account.clone(), args.refunded.saturating_add(refund));
+		transaction_meter.terminate(contract_account.clone(), refund);
 
 		log::trace!(target: LOG_TARGET, "Terminated {contract_address:?}");
 	}
@@ -1944,10 +1999,8 @@ where
 		}
 	}
 
-	/// The storage deposit refund that `System.terminate` does when it is called.
-	///
-	/// Refunds the deposit held on `contract_account` to the termination origin, as far as the
-	/// freezes on the account allow, and returns the amount refunded.
+	/// Refunds the storage deposit held on `contract_account` to the termination origin, as far
+	/// as the freezes on the account allow, and returns the amount refunded.
 	fn refund_on_terminate(
 		exec_config: &ExecConfig<T>,
 		contract_account: &T::AccountId,
@@ -2096,6 +2149,46 @@ where
 			f(&self.transient_storage)
 		}
 	}
+
+	/// Resolves where the code reported for `address` comes from, with a single
+	/// `AccountInfoOf` read.
+	///
+	/// Single source of truth for `code_hash`, `code_size` and `copy_code_slice`, which
+	/// must all resolve code from the same sources in the same priority order.
+	fn code_source(&self, address: &H160) -> Option<CodeSource<'_>> {
+		if let Some(code) = <AllPrecompiles<T>>::code(address.as_fixed_bytes()).or_else(|| {
+			self.exec_config
+				.mock_handler
+				.as_ref()
+				.and_then(|handler| handler.mocked_code(*address))
+		}) {
+			return Some(CodeSource::Virtual(code));
+		}
+
+		let (contract, target) = <AccountInfo<T>>::load_contract_with_delegation(address);
+
+		// EIP-7702: delegated EOAs return `0xef0100 || target` as their code.
+		//
+		// PVM caveat: resolc lowers CODESIZE to the `code_size` host function, so inside
+		// a delegated EOA's execution CODESIZE reports 23 instead of the size of the
+		// target's PVM blob. Fixing that needs a separate host function and a matching
+		// resolc change; tracked as a follow-up.
+		if let Some(target) = target {
+			return Some(CodeSource::Indicator(<AccountInfo<T>>::delegation_indicator(&target)));
+		}
+
+		contract.map(|contract| CodeSource::Contract(contract.code_hash))
+	}
+}
+
+/// Where the code reported for an address comes from.
+enum CodeSource<'a> {
+	/// A precompile's code stub or mocked code. Never stored in `PristineCode`.
+	Virtual(&'a [u8]),
+	/// The EIP-7702 delegation indicator `0xef0100 || target`.
+	Indicator([u8; 23]),
+	/// The code hash of a deployed contract whose code is stored in `PristineCode`.
+	Contract(H256),
 }
 
 impl<'a, T, E> Ext for Stack<'a, T, E>
@@ -2174,10 +2267,7 @@ where
 
 		// schedule for delayed deletion
 		let account_id = frame.account_id.clone();
-		self.top_frame_mut().schedule_termination(
-			account_id,
-			TerminateArgs { beneficiary, only_if_same_tx: true, refunded: Zero::zero() },
-		);
+		self.top_frame_mut().contracts_to_be_destroyed.insert(account_id, beneficiary);
 		Ok(CodeRemoved::Yes)
 	}
 
@@ -2186,7 +2276,12 @@ where
 	}
 
 	fn immutable_data_len(&mut self) -> u32 {
-		self.top_frame_mut().contract_info().immutable_data_len()
+		let frame = self.top_frame_mut();
+		if frame.code_address == T::AddressMapper::to_address(&frame.account_id) {
+			frame.contract_info().immutable_data_len()
+		} else {
+			limits::IMMUTABLE_BYTES
+		}
 	}
 
 	fn get_immutable_data(&mut self) -> Result<ImmutableData, DispatchError> {
@@ -2194,13 +2289,9 @@ where
 			return Err(Error::<T>::InvalidImmutableAccess.into());
 		}
 
-		// Immutable is read from contract code being executed
-		let address = self
-			.top_frame()
-			.delegate
-			.as_ref()
-			.map(|d| d.callee)
-			.unwrap_or(T::AddressMapper::to_address(self.account_id()));
+		// Immutable data is read from the address where the code originates.
+		// This handles regular contracts, delegated accounts (EIP-7702), and delegate_call.
+		let address = self.top_frame().code_address;
 		Ok(<ImmutableDataOf<T>>::get(address).ok_or_else(|| Error::<T>::InvalidImmutableAccess)?)
 	}
 
@@ -2287,6 +2378,10 @@ where
 		allows_reentry: ReentrancyProtection,
 		read_only: bool,
 	) -> Result<(), ExecError> {
+		// We reset the return data now, so it is cleared out even if no new frame was executed.
+		// This is for example the case for balance transfers or when creating the frame fails.
+		*self.last_frame_output_mut() = Default::default();
+
 		// Before pushing the new frame: Protect the caller contract against reentrancy attacks.
 		// It is important to do this before calling `allows_reentry` so that a direct recursion
 		// is caught by it.
@@ -2294,10 +2389,6 @@ where
 		if allows_reentry == ReentrancyProtection::Strict {
 			self.top_frame_mut().allows_reentry = false;
 		}
-
-		// We reset the return data now, so it is cleared out even if no new frame was executed.
-		// This is for example the case for balance transfers or when creating the frame fails.
-		*self.last_frame_output_mut() = Default::default();
 
 		let try_call = || {
 			// Enable read-only access if requested; cannot disable it if already set.
@@ -2351,6 +2442,7 @@ where
 						T::AddressMapper::to_address(self.account_id()),
 						T::AddressMapper::to_address(&dest),
 						None,
+						false,
 						is_read_only,
 						value,
 						&input_data,
@@ -2475,39 +2567,26 @@ where
 	}
 
 	fn code_hash(&self, address: &H160) -> H256 {
-		if let Some(code) = <AllPrecompiles<T>>::code(address.as_fixed_bytes()).or_else(|| {
-			self.exec_config
-				.mock_handler
-				.as_ref()
-				.and_then(|handler| handler.mocked_code(*address))
-		}) {
-			return sp_io::hashing::keccak_256(code).into();
+		match self.code_source(address) {
+			Some(CodeSource::Virtual(code)) => sp_io::hashing::keccak_256(code).into(),
+			Some(CodeSource::Indicator(indicator)) => sp_io::hashing::keccak_256(&indicator).into(),
+			Some(CodeSource::Contract(code_hash)) => code_hash,
+			None if System::<T>::account_exists(&T::AddressMapper::to_account_id(address)) => {
+				EMPTY_CODE_HASH
+			},
+			None => H256::zero(),
 		}
-
-		<AccountInfo<T>>::load_contract(&address)
-			.map(|contract| contract.code_hash)
-			.unwrap_or_else(|| {
-				if System::<T>::account_exists(&T::AddressMapper::to_account_id(address)) {
-					return EMPTY_CODE_HASH;
-				}
-				H256::zero()
-			})
 	}
 
 	fn code_size(&self, address: &H160) -> u64 {
-		if let Some(code) = <AllPrecompiles<T>>::code(address.as_fixed_bytes()).or_else(|| {
-			self.exec_config
-				.mock_handler
-				.as_ref()
-				.and_then(|handler| handler.mocked_code(*address))
-		}) {
-			return code.len() as u64;
+		match self.code_source(address) {
+			Some(CodeSource::Virtual(code)) => code.len() as u64,
+			Some(CodeSource::Indicator(indicator)) => indicator.len() as u64,
+			Some(CodeSource::Contract(code_hash)) => {
+				CodeInfoOf::<T>::get(code_hash).map(|info| info.code_len()).unwrap_or_default()
+			},
+			None => 0,
 		}
-
-		<AccountInfo<T>>::load_contract(&address)
-			.and_then(|contract| CodeInfoOf::<T>::get(contract.code_hash))
-			.map(|info| info.code_len())
-			.unwrap_or_default()
 	}
 
 	fn caller_is_origin(&self, use_caller_of_caller: bool) -> bool {
@@ -2550,17 +2629,25 @@ where
 		crate::Pallet::<T>::convert_native_to_evm(min)
 	}
 
-	fn deposit_event(&mut self, topics: Vec<H256>, data: Vec<u8>) {
+	fn deposit_event(
+		&mut self,
+		topics: ContractLogTopics,
+		data: Vec<u8>,
+	) -> Result<(), DispatchError> {
 		let contract = T::AddressMapper::to_address(self.account_id());
+		block_storage::capture_frame_log::<T>(&contract, &data, &topics)?;
+
 		if_tracing(|tracer| {
 			let log_index = frame_system::Pallet::<Self::T>::event_count();
 			tracer.log_event(contract, &topics, &data, log_index);
 		});
 
-		// Capture the log only if it is generated by an Ethereum transaction.
-		block_storage::capture_ethereum_log(&contract, &data, &topics);
-
-		Contracts::<Self::T>::deposit_event(Event::ContractEmitted { contract, data, topics });
+		Contracts::<Self::T>::deposit_event(Event::ContractEmitted {
+			contract,
+			data,
+			topics: topics.into_inner(),
+		});
+		Ok(())
 	}
 
 	fn block_number(&self) -> U256 {
@@ -2646,20 +2733,27 @@ where
 	}
 
 	fn copy_code_slice(&mut self, buf: &mut [u8], address: &H160, code_offset: usize) {
-		let len = buf.len();
-		if len == 0 {
+		fn copy_padded(buf: &mut [u8], code: &[u8], code_offset: usize) {
+			let code = code.get(code_offset..).unwrap_or_default();
+			let len = buf.len().min(code.len());
+			buf[..len].copy_from_slice(&code[..len]);
+			buf[len..].fill(0);
+		}
+
+		if buf.is_empty() {
 			return;
 		}
 
-		let code_hash = self.code_hash(address);
-		let code = crate::PristineCode::<T>::get(&code_hash).unwrap_or_default();
-
-		let len = len.min(code.len().saturating_sub(code_offset));
-		if len > 0 {
-			buf[..len].copy_from_slice(&code[code_offset..code_offset + len]);
+		match self.code_source(address) {
+			Some(CodeSource::Virtual(code)) => copy_padded(buf, code, code_offset),
+			Some(CodeSource::Indicator(indicator)) => copy_padded(buf, &indicator, code_offset),
+			Some(CodeSource::Contract(code_hash)) => copy_padded(
+				buf,
+				&crate::PristineCode::<T>::get(&code_hash).unwrap_or_default(),
+				code_offset,
+			),
+			None => buf.fill(0),
 		}
-
-		buf[len..].fill(0);
 	}
 
 	fn terminate_caller(&mut self, beneficiary: &H160) -> Result<(), DispatchError> {
@@ -2669,15 +2763,16 @@ where
 		ensure!(parent.delegate.is_none(), Error::<T>::PrecompileDelegateDenied);
 
 		let contract_address = T::AddressMapper::to_address(&parent.account_id);
+
+		// EIP-7702: delegated EOAs cannot be destroyed via the system precompile.
+		ensure!(
+			!AccountInfo::<T>::is_delegated(&contract_address),
+			Error::<T>::CannotTerminateDelegatedAccount,
+		);
+
 		let beneficiary = T::AddressMapper::to_account_id(beneficiary);
 
 		let parent_account_id = parent.account_id.clone();
-
-		// Refund the storage deposit before the payout. The hold counts towards any freeze on
-		// the account, so after the payout it would be needed to cover the freeze. Released now,
-		// it is paid back as far as the freeze allows, and only the remainder stays on hold.
-		let refunded =
-			Self::refund_on_terminate(&self.exec_config, &parent_account_id, &self.origin)?;
 
 		// balance transfer is immediate
 		Self::transfer(
@@ -2691,8 +2786,9 @@ where
 		)?;
 
 		// schedule for delayed deletion
-		let args = TerminateArgs { beneficiary, only_if_same_tx: false, refunded };
-		self.top_frame_mut().schedule_termination(parent_account_id, args);
+		self.top_frame_mut()
+			.contracts_to_be_destroyed
+			.insert(parent_account_id, beneficiary);
 
 		Ok(())
 	}
@@ -2735,29 +2831,14 @@ where
 		)
 	}
 
-	fn touch_storage_access(
-		&mut self,
-		transient: bool,
-		key: &Key,
-		op: StorageOp,
-	) -> StorageAccessKind {
-		if transient {
-			return StorageAccessKind::Transient;
-		}
+	fn touch_storage_access(&mut self, key: &Key, op: StorageOp) -> Warmth {
 		let address = self.address();
-		StorageAccessKind::Persistent(
-			self.access_list.touch(AccessEntry { address, slot: key.into() }, op),
-		)
+		self.access_list.touch(AccessEntry { address, slot: key.into() }, op)
 	}
 
-	fn peek_storage_access(&self, transient: bool, key: &Key) -> StorageAccessKind {
-		if transient {
-			return StorageAccessKind::Transient;
-		}
+	fn peek_storage_access(&self, key: &Key) -> Warmth {
 		let address = self.address();
-		StorageAccessKind::Persistent(
-			self.access_list.peek(&AccessEntry { address, slot: key.into() }),
-		)
+		self.access_list.peek(&AccessEntry { address, slot: key.into() })
 	}
 
 	fn charge_storage(&mut self, diff: &Diff) -> DispatchResult {
@@ -2771,32 +2852,22 @@ pub fn is_precompile<T: Config, E: Executable<T>>(address: &H160) -> bool {
 	<AllPrecompiles<T>>::get::<Stack<'_, T, E>>(address.as_fixed_bytes()).is_some()
 }
 
-/// Runs the balance work of a termination: the storage deposit refund that `System.terminate`
-/// does when it is called, followed by the teardown at the end of the call stack. `SELFDESTRUCT`
-/// (`only_if_same_tx`) does not refund when it is called, so the refund is skipped for it.
+/// Runs the teardown of a terminated contract at the end of the call stack.
 #[cfg(feature = "runtime-benchmarks")]
 pub fn bench_do_terminate<T: Config>(
 	transaction_meter: &mut TransactionMeter<T>,
 	exec_config: &ExecConfig<T>,
 	contract_account: &T::AccountId,
 	origin: &Origin<T>,
-	beneficiary: T::AccountId,
-	only_if_same_tx: bool,
-) -> Result<(), DispatchError> {
-	type BenchStack<'a, T> = Stack<'a, T, crate::ContractBlob<T>>;
-	let refunded = if only_if_same_tx {
-		Zero::zero()
-	} else {
-		BenchStack::<T>::refund_on_terminate(exec_config, contract_account, origin)?
-	};
-	BenchStack::<T>::do_terminate(
+	beneficiary: &T::AccountId,
+) {
+	Stack::<T, crate::ContractBlob<T>>::do_terminate(
 		transaction_meter,
 		exec_config,
 		contract_account,
 		origin,
-		&TerminateArgs { beneficiary, only_if_same_tx, refunded },
+		beneficiary,
 	);
-	Ok(())
 }
 
 mod sealing {

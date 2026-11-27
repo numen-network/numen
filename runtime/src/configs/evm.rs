@@ -162,4 +162,5 @@ impl pallet_revive::Config for Runtime {
 	type DebugEnabled = ConstBool<false>;
 	type AutoMap = ConstBool<true>;
 	type GasScale = GasScale;
+	type MaxOutsideFrameLogs = ConstU32<0>;
 }

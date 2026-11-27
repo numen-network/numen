@@ -8,7 +8,7 @@ use frame_support::{
 		fungible::{Balanced, Credit, HoldConsideration},
 		tokens::{PayFromAccount, UnityAssetBalanceConversion},
 		ConstU128, ConstU32, ConstU64, ConstU8, EqualPrivilegeOnly, Get, Imbalance,
-		InstanceFilter, LinearStoragePrice, OnUnbalanced, VariantCountOf, WithdrawReasons,
+		InstanceFilter, LinearStoragePrice, OnUnbalanced, WithdrawReasons,
 	},
 	weights::{
 		constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
@@ -131,8 +131,6 @@ impl pallet_balances::Config for Runtime {
 	type ExistentialDeposit = ConstU128<EXISTENTIAL_DEPOSIT>;
 	type AccountStore = System;
 	type WeightInfo = crate::weights::pallet_balances::WeightInfo<Runtime>;
-	type FreezeIdentifier = RuntimeFreezeReason;
-	type MaxFreezes = VariantCountOf<RuntimeFreezeReason>;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type RuntimeFreezeReason = RuntimeFreezeReason;
 	type DoneSlashHandler = ();

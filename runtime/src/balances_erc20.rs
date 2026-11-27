@@ -427,7 +427,9 @@ fn emit(env: &mut impl Ext<T = Runtime>, event: Event) -> Result<(), Error> {
 		num_topic: topics.len() as u32,
 		len: data.len() as u32,
 	})?;
-	env.deposit_event(topics, data.to_vec());
+	let topics = pallet_revive::ContractLogTopics::try_from(topics)
+		.map_err(|_| revert("ERC20: too many topics"))?;
+	env.deposit_event(topics, data.to_vec())?;
 	Ok(())
 }
 
