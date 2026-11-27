@@ -2,7 +2,7 @@ use crate as pallet_validator;
 use crate::SessionInterface;
 use frame_support::{
 	derive_impl, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU64, Contains, LockIdentifier, VariantCountOf, Hooks},
+	traits::{ConstU128, ConstU32, ConstU64, Contains, LockIdentifier, Hooks},
 };
 use sp_runtime::BuildStorage;
 
@@ -54,8 +54,6 @@ impl pallet_balances::Config for Test {
 	type ExistentialDeposit = ConstU128<1>;
 	type AccountStore = System;
 	type WeightInfo = ();
-	type FreezeIdentifier = RuntimeFreezeReason;
-	type MaxFreezes = VariantCountOf<RuntimeFreezeReason>;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type RuntimeFreezeReason = RuntimeFreezeReason;
 	type DoneSlashHandler = ();

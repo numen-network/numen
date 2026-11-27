@@ -32,11 +32,11 @@ frame_benchmarking::define_benchmarks!(
 	[pallet_proxy, Proxy]
 	[pallet_prime, Prime]
 	[pallet_vesting, Vesting]
-	// `pallet_revive` stays out. `seal_call` and `seal_instantiate` send 100
-	// units of dust, which needs a `NativeToEthRatio` above 100, and this chain
-	// runs at 1. `v2_migration_step` also picks up the genesis code behind
-	// `0x…0802` as an extra entry to migrate. Weights stay on the upstream
-	// values.
+	// `pallet_revive` stays out. `seal_call_transfer` and
+	// `seal_instantiate_transfer` send 100 units of dust, which needs a
+	// `NativeToEthRatio` above 100, and this chain runs at 1.
+	// `v2_migration_step` also picks up the genesis code behind `0x…0802` as an
+	// extra entry to migrate. Weights stay on the upstream values.
 	[pallet_evm_claims, EvmClaims]
 	[pallet_identity, Identity]
 );

@@ -21,5 +21,5 @@ target/eth-rpc/bin/eth-rpc --version
 # and overwrite our pre-registered session keys with auto-generated ones.
 SPEC="$ROOT/zombienet/integration/integration-raw.json"
 echo "Generating raw chainspec at $SPEC"
-"$BIN" build-spec --chain integration --raw --disable-default-bootnode > "$SPEC"
+"$BIN" export-chain-spec --chain integration --raw > "$SPEC"
 echo "Raw spec: $(wc -c < "$SPEC") bytes"

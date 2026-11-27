@@ -15,7 +15,7 @@ for chain in "$@"; do
 	if [[ -f $out ]]; then
 		bootnodes=$(jq -c .bootNodes "$out")
 	fi
-	./target/release/numen build-spec --chain "$chain" --raw --disable-default-bootnode \
+	./target/release/numen export-chain-spec --chain "$chain" --raw \
 		| jq -j --argjson bootNodes "$bootnodes" '.bootNodes = $bootNodes' > "$out"
 	echo "$out written with $(jq '.bootNodes | length' "$out") bootnodes"
 done

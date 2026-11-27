@@ -179,7 +179,7 @@ fn child_bounty_pays_beneficiary_without_new_vote() {
 		let parent = active_parent_bounty(&proposer, &curator, BOUNTY_VALUE, BOUNTY_FEE);
 		assert_eq!(pallet_child_bounties::ParentChildBounties::<Runtime>::get(parent), 0);
 
-		let child = pallet_child_bounties::ChildBountyCount::<Runtime>::get();
+		let child = pallet_child_bounties::ParentTotalChildBounties::<Runtime>::get(parent);
 		assert_ok!(ChildBounties::add_child_bounty(
 			RuntimeOrigin::signed(curator.clone()),
 			parent,
