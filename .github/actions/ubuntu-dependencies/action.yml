@@ -10,5 +10,4 @@ runs:
         sudo apt install -y clang libssl-dev llvm libclang-dev libudev-dev make protobuf-compiler
         rustup target add wasm32v1-none
         rustup component add rustfmt clippy rust-src
-        cargo install cargo-expand
       shell: bash
