@@ -10,6 +10,7 @@ pub mod balances_erc20;
 mod benchmarks;
 pub mod check_nonce;
 pub mod configs;
+pub mod dispatch_precompile;
 pub mod identity_info;
 pub mod inherent_checks;
 pub mod migrations;

@@ -106,6 +106,12 @@ pub mod pallet_precompiles {
 		pub fn balances_erc20() -> H160 {
 			crate::balances_erc20::ADDRESS
 		}
+
+		/// EVM address of the whitelisted runtime call dispatcher.
+		#[pallet::constant_name(Dispatch)]
+		pub fn dispatch() -> H160 {
+			crate::dispatch_precompile::ADDRESS
+		}
 	}
 }
 
@@ -142,7 +148,10 @@ impl pallet_revive::Config for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type WeightInfo = pallet_revive::weights::SubstrateWeight<Self>;
-	type Precompiles = (crate::balances_erc20::BalancesErc20,);
+	type Precompiles = (
+		crate::balances_erc20::BalancesErc20,
+		crate::dispatch_precompile::DispatchPrecompile,
+	);
 	type FindAuthor = PowFindAuthor;
 	type DepositPerByte = DepositPerByte;
 	type DepositPerItem = DepositPerItem;

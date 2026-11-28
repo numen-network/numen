@@ -20,7 +20,9 @@ use frame_support::{
 use numen_runtime::{
 	balances_erc20::IBalancesErc20,
 	configs::governance::{pallet_custom_origins, TracksInfo, TreasurySpender},
-	Balance, Balances, Preimage, Revive, Runtime, RuntimeHoldReason, RuntimeOrigin, UNIT,
+	dispatch_precompile::IDispatch,
+	Balance, Balances, Preimage, Revive, Runtime, RuntimeCall, RuntimeHoldReason, RuntimeOrigin,
+	Vesting, UNIT,
 };
 use pallet_referenda::TracksInfo as _;
 use pallet_revive::{precompiles::alloy::sol_types::SolCall, ExecConfig, TransactionLimits};
@@ -158,5 +160,39 @@ fn published_balances_erc20_is_where_the_token_answers() {
 		.expect("the call executes");
 
 		assert_eq!(IBalancesErc20::nameCall::abi_decode_returns(&output.data).unwrap(), "Numen");
+	});
+}
+
+/// Wallets route EVM governance and vesting calls to this address, so the
+/// published constant has to match where the precompile listens.
+#[test]
+fn published_dispatch_is_where_the_dispatcher_answers() {
+	use codec::Encode;
+	let address: H160 = Decode::decode(&mut &published("Precompiles", "Dispatch")[..])
+		.expect("Dispatch is published as a twenty byte address");
+
+	preset_ext(sp_genesis_builder::DEV_RUNTIME_PRESET).execute_with(|| {
+		let alice = Sr25519Keyring::Alice.to_account_id();
+		let bob = Sr25519Keyring::Bob.to_account_id();
+		let grant = RuntimeCall::Vesting(pallet_vesting::Call::vested_transfer {
+			target: sp_runtime::MultiAddress::Id(bob.clone()),
+			schedule: pallet_vesting::VestingInfo::new(100 * UNIT, UNIT, 1),
+		});
+		let output = Revive::bare_call(
+			RuntimeOrigin::signed(alice),
+			address,
+			U256::zero(),
+			TransactionLimits::WeightAndDeposit {
+				weight_limit: Weight::from_parts(500_000_000_000, 5 * 1024 * 1024),
+				deposit_limit: UNIT,
+			},
+			IDispatch::dispatchCall { call: grant.encode().into() }.abi_encode(),
+			&ExecConfig::new_substrate_tx(),
+		)
+		.result
+		.expect("the call executes");
+
+		assert!(!output.did_revert());
+		assert_eq!(Vesting::vesting(bob).map(|s| s.len()), Some(1));
 	});
 }
