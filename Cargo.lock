@@ -11897,7 +11897,6 @@ dependencies = [
 [[package]]
 name = "sc-tracing"
 version = "50.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk?branch=stable2611#ab6dc25243abd566abec27f3024e80b104759edc"
 dependencies = [
  "chrono",
  "console",
