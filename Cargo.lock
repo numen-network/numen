@@ -7628,7 +7628,6 @@ dependencies = [
  "frame-system-rpc-runtime-api",
  "frame-try-runtime",
  "hex-literal 1.1.0",
- "log",
  "pallet-authorship",
  "pallet-balances",
  "pallet-bounties",
