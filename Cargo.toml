@@ -20,7 +20,7 @@ members = [
     "runtime",
     "vendor/fc-rpc-core",
 ]
-exclude = ["vendor/pallet-revive"]
+exclude = ["vendor/pallet-revive", "vendor/sc-tracing"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -149,3 +149,4 @@ lto = true
 
 [patch."https://github.com/paritytech/polkadot-sdk"]
 pallet-revive = { path = "vendor/pallet-revive" }
+sc-tracing = { path = "vendor/sc-tracing" }
