@@ -69,7 +69,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: alloc::borrow::Cow::Borrowed("numen-runtime"),
 	impl_name: alloc::borrow::Cow::Borrowed("numen-runtime"),
 	authoring_version: 1,
-	spec_version: 10200,
+	spec_version: 10300,
 	impl_version: 1,
 	apis: apis::RUNTIME_API_VERSIONS,
 	transaction_version: 1,
