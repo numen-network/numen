@@ -44,15 +44,32 @@ jobs:
 
   build:
     needs: [check-version, test, zombienet]
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             asset: numen-linux-x86_64
+            archive: tar.gz
+            ext: ''
           - os: macos-latest
             asset: numen-macos-arm64
+            archive: tar.gz
+            ext: ''
+          - os: windows-latest
+            asset: numen-windows-x86_64
+            archive: zip
+            ext: .exe
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Configure git line endings (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.protectNTFS false
+
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/free-disk-space
@@ -66,6 +83,10 @@ jobs:
         if: matrix.os == 'macos-latest'
         uses: ./.github/actions/macos-dependencies
 
+      - name: Rust compilation prerequisites (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: ./.github/actions/windows-dependencies
+
       - name: Build node
         run: cargo build --profile production --locked -p numen --features metadata-hash
         timeout-minutes: 90
@@ -77,14 +98,18 @@ jobs:
       - name: Bundle release archive
         run: |
           mkdir -p ${{ matrix.asset }}
-          cp target/production/numen target/eth-rpc/bin/eth-rpc ${{ matrix.asset }}/
+          cp target/production/numen${{ matrix.ext }} target/eth-rpc/bin/eth-rpc${{ matrix.ext }} ${{ matrix.asset }}/
           cp mainnet-raw.json ${{ matrix.asset }}/
-          tar -czf ${{ matrix.asset }}.tar.gz ${{ matrix.asset }}
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            powershell.exe -NoProfile -Command "Compress-Archive -Path '${{ matrix.asset }}' -DestinationPath '${{ matrix.asset }}.zip' -Force"
+          else
+            tar -czf ${{ matrix.asset }}.tar.gz ${{ matrix.asset }}
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}.tar.gz
-          path: ${{ matrix.asset }}.tar.gz
+          name: ${{ matrix.asset }}.${{ matrix.archive }}
+          path: ${{ matrix.asset }}.${{ matrix.archive }}
 
   publish:
     needs: [check-version, build]
@@ -93,7 +118,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: '*.tar.gz'
+          pattern: 'numen-*'
           merge-multiple: true
 
       - name: release

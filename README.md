@@ -30,7 +30,7 @@ tar -xzf numen-linux-x86_64.tar.gz
 cd numen-linux-x86_64
 ```
 
-Builds ship for Linux x86_64 and macOS arm64. Build from source for anything else, or to track master. See [docs/how-to-build.md](docs/how-to-build.md).
+Builds ship for Linux x86_64, macOS arm64 and Windows x86_64. Windows needs the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe). Build from source for anything else, or to track master. See [docs/how-to-build.md](docs/how-to-build.md).
 
 For the testnet, download [testnet-raw.json](https://github.com/numen-network/numen/raw/refs/heads/master/testnet-raw.json) and pass it to `--chain` instead of `mainnet`.
 
