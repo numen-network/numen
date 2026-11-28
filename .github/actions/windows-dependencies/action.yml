@@ -1,0 +1,43 @@
+name: Install Windows dependencies
+description: Installs dependencies required to compile the node on Windows
+
+runs:
+  using: "composite"
+  steps:
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: protoc
+    - run: |
+        if [ ! -f "/c/Program Files/LLVM/bin/libclang.dll" ]; then
+          choco install llvm -y --no-progress
+        fi
+        if [ ! -f "/c/Strawberry/perl/bin/perl.exe" ]; then
+          choco install strawberryperl -y --no-progress
+        fi
+        {
+          echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin"
+          echo "OPENSSL_SRC_PERL=C:\\Strawberry\\perl\\bin\\perl.exe"
+          echo "CL=/utf-8"
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true"
+        } >> "$GITHUB_ENV"
+        rustup target add wasm32v1-none
+        rustup component add rustfmt clippy rust-src
+      shell: bash
+    - name: Fetch dependencies
+      env:
+        CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      run: |
+        # libgit2 rejects the aux directory in polkadot-sdk on Windows.
+        cargo fetch --locked || {
+          rev=$(sed -nE 's|^source = "git\+https://github\.com/paritytech/polkadot-sdk\?[^#]*#([0-9a-f]{40})"$|\1|p' Cargo.lock | sort -u)
+          cargo_home=$(cygpath -u "${CARGO_HOME:-$USERPROFILE/.cargo}")
+          for dir in "$cargo_home"/git/checkouts/polkadot-sdk-*/*; do
+            [ -d "$dir/.git" ] || continue
+            [ -f "$dir/.cargo-ok" ] && continue
+            git -C "$dir" sparse-checkout set --no-cone '/*' '!/polkadot/node/test-sim/src/aux/'
+            git -C "$dir" checkout -f "$rev"
+            touch "$dir/.cargo-ok"
+          done
+          cargo fetch --locked
+        }
+      shell: bash

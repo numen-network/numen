@@ -80,9 +80,24 @@ brew install openssl pkg-config protobuf
 
 ### Windows
 
-**_PLEASE NOTE:_** Native Windows development of Substrate is _not_ very well supported! It is _highly_
-recommended to use [Windows Subsystem Linux](https://docs.microsoft.com/en-us/windows/wsl/install)
-(WSL2) and follow the instructions for [Ubuntu/Debian](#ubuntudebian).
+Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the C++ desktop workload. Install Git, LLVM, Protoc and Strawberry Perl too. Turn off Git CRLF conversion and NTFS path checks before cloning.
+
+```powershell
+choco install llvm protoc strawberryperl -y
+git config --global core.autocrlf false
+git config --global core.protectNTFS false
+```
+
+Set these environment variables in PowerShell before running Cargo.
+
+```powershell
+$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
+$env:OPENSSL_SRC_PERL = "C:\Strawberry\perl\bin\perl.exe"
+$env:CL = "/utf-8"
+$env:CARGO_NET_GIT_FETCH_WITH_CLI = "true"
+```
+
+If Cargo rejects the `aux` path in `polkadot-sdk`, run the checkout step from [`.github/actions/windows-dependencies/action.yml`](../.github/actions/windows-dependencies/action.yml) in Git Bash. WSL2 with the [Ubuntu/Debian](#ubuntudebian) steps also works.
 
 ---
 
